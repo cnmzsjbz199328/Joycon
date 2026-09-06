@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Joy-Con 2 Motion Platform</title>
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Joy-Con 2 Motion Web Game Platform</h1>
+      <p class="muted">
+        A reusable motion base: Joy-Con 2 → BLE → Adapter → Motion Engine → unified Motion API → games.
+        Runs entirely off-console. Without a Joy-Con 2 it falls back to Mock IMU / Keyboard / Gamepad / Joy-Con 1.
+      </p>
+
+      <div class="links">
+        <a class="card" href="./playground.html">
+          <b>Motion Playground →</b>
+          Live gyro / accel scope, motion speed, gesture readout, and the 3D Sword pipeline check.
+        </a>
+        <a class="card" href="./game.html">
+          <b>Motion Fruit Slash →</b>
+          The first full motion demo. Swing to slice fruit, avoid bombs. No game over.
+        </a>
+      </div>
+
+      <div class="panel" style="margin-top:20px">
+        <h2>Start-up</h2>
+        <ol class="muted" style="margin:0; padding-left:18px">
+          <li>Run the adapter: <span class="mono">python -m adapter.src.service --source joycon2</span>
+            (or <span class="mono">--source synthetic</span> with no hardware).</li>
+          <li>Open a page above, pick a provider, press <b>Connect</b>.</li>
+          <li>Calibration: hold the Joy-Con flat for 2&nbsp;s → <b>Calibration Complete</b>.</li>
+          <li>Play.</li>
+        </ol>
+        <p class="hint">
+          The Joy-Con 2 BLE path is <b>EXPERIMENTAL</b> — implemented from community reverse-engineering,
+          not verified on hardware here. See <span class="mono">docs/JOYCON2_PROTOCOL.md</span>.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

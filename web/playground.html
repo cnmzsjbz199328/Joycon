@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Motion Playground — Joy-Con 2</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row spread">
+        <div>
+          <h1>Motion Playground</h1>
+          <div class="muted">Live IMU + gesture debugging · 3D Sword pipeline check</div>
+        </div>
+        <div class="links"><a href="./index.html">← Launcher</a><a href="./game.html">Fruit Slash →</a></div>
+      </div>
+
+      <div class="grid" style="margin-top:16px">
+        <div>
+          <div class="panel" id="conn"></div>
+
+          <div class="panel" style="margin-top:16px">
+            <h2>Readouts</h2>
+            <div class="row spread"><span class="muted">Motion Speed</span><span class="big mono" id="speed">0.00</span></div>
+            <div class="row spread"><span class="muted">Orientation</span><span class="mono" id="euler">p 0°  y 0°  r 0°</span></div>
+
+            <h2 style="margin-top:16px">Gyro <span class="muted">rad/s</span></h2>
+            <div class="readout"><span class="k" style="color:var(--x)">X</span><span class="bar" style="color:var(--x)"><span id="gxbar"></span></span><span class="v mono" id="gx">0.00</span></div>
+            <div class="readout"><span class="k" style="color:var(--y)">Y</span><span class="bar" style="color:var(--y)"><span id="gybar"></span></span><span class="v mono" id="gy">0.00</span></div>
+            <div class="readout"><span class="k" style="color:var(--z)">Z</span><span class="bar" style="color:var(--z)"><span id="gzbar"></span></span><span class="v mono" id="gz">0.00</span></div>
+
+            <h2 style="margin-top:16px">Accel <span class="muted">g, gravity removed</span></h2>
+            <div class="readout"><span class="k" style="color:var(--x)">X</span><span class="bar" style="color:var(--x)"><span id="axbar"></span></span><span class="v mono" id="ax">0.00</span></div>
+            <div class="readout"><span class="k" style="color:var(--y)">Y</span><span class="bar" style="color:var(--y)"><span id="aybar"></span></span><span class="v mono" id="ay">0.00</span></div>
+            <div class="readout"><span class="k" style="color:var(--z)">Z</span><span class="bar" style="color:var(--z)"><span id="azbar"></span></span><span class="v mono" id="az">0.00</span></div>
+
+            <div class="row" style="margin-top:14px">
+              <button id="recal">Recalibrate</button>
+            </div>
+            <div class="hint" id="src-note"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel">
+            <h2>Gesture</h2>
+            <div class="gesture-flash stale" id="gesture">— waiting for motion —</div>
+          </div>
+
+          <div class="panel" style="margin-top:16px">
+            <h2>IMU Scope</h2>
+            <canvas id="scope" style="height:320px"></canvas>
+          </div>
+
+          <div class="panel" style="margin-top:16px">
+            <h2>3D Sword <span class="muted">— turn the controller; flick to slash</span></h2>
+            <canvas id="sword" style="height:380px"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/playground/main.js"></script>
+  </body>
+</html>
