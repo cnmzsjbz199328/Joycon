@@ -130,6 +130,7 @@ Done (Phase 1 of the project): research → protocol → BLE reader → IMU deco
 WebSocket bridge → Motion Playground → 3D Sword → Gesture Engine → Fruit Slash →
 docs.
 
-Next: verify the Joy-Con 2 BLE path on hardware (J1–J12), then stack more games
-on the unchanged Motion API — Tennis, Table Tennis, Boxing, Racing, Bowling,
+Next: verify the Joy-Con 2 BLE path on hardware — step-by-step runbook in
+[docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) — then stack more games on
+the unchanged Motion API — Tennis, Table Tennis, Boxing, Racing, Bowling,
 Fishing, Rhythm.

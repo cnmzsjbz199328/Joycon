@@ -68,6 +68,9 @@ cd web
 
 ## 4. 真机验收步骤（有 Joy-Con 2 时）
 
+> 完整运行手册（含人的物理操作、逐步核对表、失败处理、订正落点）见
+> [HARDWARE_BRINGUP.md](./HARDWARE_BRINGUP.md)。下面是精简版。
+
 1. `python -m adapter.src.bluetooth.prototype --scan` → 确认发现设备（J1–J2）。
 2. `python -m adapter.src.bluetooth.prototype --connect <addr> --seconds 20` → dump GATT 树 + 原始 notification；核对 §H 偏移、字节序（J3–J7）。
 3. `python -m adapter.src.reader --source joycon2 --side left` → 静置看 accel≈(0,0,1)g、gyro≈0；旋转看方向自洽（J5–J6, J9）。
