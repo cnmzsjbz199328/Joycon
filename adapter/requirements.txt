@@ -1,0 +1,6 @@
+# Joy-Con 2 Adapter runtime deps
+bleak>=0.22.0        # cross-platform BLE (WinRT / CoreBluetooth / BlueZ)
+websockets>=12.0     # WebSocket server for the browser bridge
+
+# dev / test
+pytest>=8.0
