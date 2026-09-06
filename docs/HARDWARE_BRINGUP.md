@@ -212,12 +212,34 @@ cd web && npm run dev
 
 **代码改动（第 2 轮）**：`web/src/motion/gestures.js`（阈值 retune + `THRUST` window-peak）、`web/test/gestures.test.js`（gentle 用例）。
 
-### 待续
+### 下一步计划（下次接着做）
 
-- **左 Joy-Con** 单独一轮：按键掩码 / 摇杆偏移（J9）。
-- **手势方向**：盯屏迭代四方向轴符号 + `THRUST`/`SLASH` 门槛平衡（把硬件调参与 Mock 解耦）。
-- **`game.html`** Fruit Slash 真机跑一遍（#5）。
-- **Step D** 终端 `reader --source joycon2`（可选，Step E 已覆盖大部分）。
-- **Step F** 重连 5 次跑满 backoff 序列（J10 目前只观察到冷却现象）。
-- **Step G** 延迟分位数 p50/p95（J11）。
-- 温度 / 磁力计 / analog trigger 字段（抓取中恒 0 或 garbage）。
+两只 Joy-Con 2 的地址（macOS 随机 UUID，重启蓝牙后可能变，届时重新 `--scan`）：
+- 右 `59F5F588-7FB0-D2F8-1D87-AFA2209F86AA`（广播名 `Joy-Con 2 (R)`）—— 已验证
+- 左 `BD708F44-2792-E1F3-F6B0-48B9B7851FCF`（广播名空 → side unknown）—— **待测**
+
+工具都在 `scratchpad/`（本次会话生成，非仓库文件）：`capture.py`（脚本化抓取，逐包落盘）、`analyze2.py` / `analyze3.py`（暴力定位偏移 + 解码）、`ws_gyro.py` / `mon_swing.py`（实时监控）、`pw_*.py`（Playwright 驱动浏览器）。
+
+**A. 左 Joy-Con 复核（J9）— 优先**
+1. 只按左 Joy-Con 的 Sync，`.venv/bin/python -m adapter.src.bluetooth.prototype --scan` 确认地址。
+2. `.venv/bin/python scratchpad/capture.py <左地址> --seconds 240 --out scratchpad/cap_left.jsonl`，人按动作表（§2 Step C 那套：静置六朝向 + 转动 + **逐个按 D-Pad / L / ZL / − / stick / SL / SR**）。
+3. `.venv/bin/python scratchpad/analyze2.py scratchpad/cap_left.jsonl` → 核对：
+   - 左按键掩码（`BUTTON_MASKS_LEFT`，byte `0x04` big-endian，注意左是 `data[4:7]`）—— 现有表来自 [FR-PY] 未经真机，重点看 D-Pad 四向 + `−` + stick 按下。
+   - 左摇杆在 `data[10:13]`（Step B 已初步见 `8a b7 84` ≈ 中心，确认推杆四向正负）。
+   - accel/gyro 偏移应与右一致（`0x30` / `0x36`）。
+4. 有出入就改 `constants.py` / `buttons.py`，`cd adapter && ../.venv/bin/python -m pytest -q` 不破坏 roundtrip。
+5. 回填本文件 §J 的 J9、`JOYCON2_PROTOCOL.md` §E。
+
+**B. 手势四方向 + game.html（Step E #4/#5）— 需要人盯屏**
+1. 两个终端：`.venv/bin/python -m adapter.src.service --source joycon2 --side <l/r>` + `cd web && npm run dev`。
+   注意 `service.py` 扫不到设备会**整个退出**（不重试）——先按住 Sync 出跑马灯再启动。
+2. 浏览器开 `localhost:5173/playground.html`，`window.__engine` 已无临时探针；要实时看内部判定就临时加回 `window.__engine = engine`（`playground/main.js:11`）跑 `scratchpad/pw_instr2.py`，完事 `git checkout`。
+3. 逐个做透 `SLASH_LEFT / UP / DOWN`（同 `SLASH_RIGHT` 套路，见 [MOTION_ENGINE.md](./MOTION_ENGINE.md) §3.1）：确认各轴符号、调 `enterSpeed`（现 1.5，回挥偏弱可试 1.3）。
+4. 四方向都稳后开 `game.html`，验 #5：切水果加分、切炸弹扣分不结束。
+5. 若某方向体感反了 → `gestures.js` `_classify()` 翻对应轴符号，更新 §3 表。
+
+**C. 收尾项**
+- Step F：快速断连 5 次，看 `service.py` 日志 backoff `1→2→4→…→60s` + 第 4 次提示等待（J10）。
+- Step G：链路三点打时间戳统计 `t_draw - t_recv` p50/p95，目标 p95 < 50 ms（J11）。填 `JOYCON2_PROTOCOL.md` §D.3。
+- 温度 / 磁力计 / analog trigger：抓取里恒 0 或 garbage，低优先，标 UNVERIFIED 即可。
+- 全部完成后按本文件 §3 表更新 `TESTING.md` §3、`README.md`，一个总结 commit。
