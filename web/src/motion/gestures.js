@@ -23,10 +23,15 @@ const GESTURE_NAMES = [
 
 export class GestureRecognizer {
   constructor(opts = {}) {
-    // rad/s. mock peaks ~15.7 rad/s; a firm real swing is 8-20 rad/s.
-    this.enterSpeed = opts.enterSpeed ?? 6.0;
-    this.exitSpeed = opts.exitSpeed ?? 3.0;
-    this.fullSpeed = opts.fullSpeed ?? 14.0; // -> strength 1.0
+    // rad/s. Retuned against real hardware 2026-09-06 (right Joy-Con 2, macOS):
+    // a gentle handling wobble is ~0.9 rad/s, a firm slash ~1.6-2.0, an all-out
+    // spin peaks ~2.7. The original 6.0 / 14.0 were calibrated to the Mock IMU
+    // (synthetic 900 dps / 15.7 rad/s bursts) and were unreachable on hardware,
+    // so every real swing fell through to THRUST. Mock still clears these easily.
+    // See docs/MOTION_ENGINE.md §3 and docs/HARDWARE_BRINGUP.md §5.
+    this.enterSpeed = opts.enterSpeed ?? 1.5;
+    this.exitSpeed = opts.exitSpeed ?? 0.6;
+    this.fullSpeed = opts.fullSpeed ?? 2.6; // -> strength 1.0
     this.thrustAccel = opts.thrustAccel ?? 2.0; // g, gravity removed
     this.refractory = opts.refractory ?? 0.28; // seconds between emitted gestures
     this.window = new Window(opts.windowSpan ?? 0.35);

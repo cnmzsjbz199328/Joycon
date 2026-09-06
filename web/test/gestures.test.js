@@ -60,7 +60,8 @@ test("four directions are distinguishable in sequence", () => {
 
 test("gentle motion below threshold emits nothing", () => {
   const rec = new GestureRecognizer();
-  const r = swing(rec, { axis: 2, peak: 3 });
+  // 1.0 rad/s ~ a handling wobble on real hardware (enterSpeed is 1.5).
+  const r = swing(rec, { axis: 2, peak: 1.0 });
   assert.equal(r.events.length, 0);
 });
 

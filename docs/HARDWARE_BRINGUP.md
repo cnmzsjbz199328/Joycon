@@ -192,4 +192,31 @@ cd web && npm run dev
 
 **代码改动**：`adapter/src/protocol/constants.py`（Service UUID、battery 偏移、注释）、`adapter/src/decoder/buttons.py`（C 键）。19 项 pytest 仍全过；真机包端到端 `decode_packet` 验证通过。
 
-**待续**：左 Joy-Con 单独一轮（J9）；Step D 终端 reader；Step E 完整链路 + 浏览器（Playground / 3D 剑 / Fruit Slash / 手势轴符号）；Step F 重连 5 次；Step G 延迟分位数。
+### 第 2 轮 — 同日，Step E 完整链路 + 浏览器（右 Joy-Con）
+
+`service.py --source joycon2 --side right` → `web` (vite) → 无头 Chromium（Playwright）连 Playground。
+
+| 验收项（GOAL §17） | 结果 |
+| --- | --- |
+| 1 Adapter `out/in == 1.00` 不降采样 | ✅ `in=33.5 Hz out=33.5 Hz out/in=1.00 short=0` |
+| 2 Playground 显示 accel/gyro + Connected + LEFT/RIGHT | ✅ Connected / **RIGHT** / Calibrated；示波器 + 数字实时；3D 剑渲染正常（截图存档） |
+| 3 转动手柄 → 3D 剑同步 | ✅ 朝向跟踪实时（yaw 随转动 0°→113°，pitch/roll 跟手） |
+| 4 快挥 → `SLASH_LEFT/RIGHT/UP/DOWN` | 🟡 手势引擎工作、`THRUST` 频繁触发；retune 阈值后 `SLASH_DOWN` 能出，但 `THRUST` 仍抢占（见下）。四方向轴符号未干净复核 |
+| 5 `game.html` 切水果加分 | ⬜ 未测（依赖 #4 的 `SLASH_*` 稳定触发） |
+
+**关键发现**：`GestureRecognizer` 阈值是按 Mock IMU（合成 900 dps ≈ 15.7 rad/s）调的；真机 Joy-Con 2 拼命挥峰值仅 **~2.7 rad/s**（轻晃 0.9、干脆挥 1.6–2.0），`enterSpeed 6.0` 够不到。
+已把 `gestures.js` 默认值降到 `enterSpeed 1.5 / exitSpeed 0.6 / fullSpeed 2.6`，17 项 web 测试全过（`gentle` 用例的 `peak` 3→1.0）。详情与未决项见 [MOTION_ENGINE.md](./MOTION_ENGINE.md) §3.1。
+
+陀螺满量程复核：拼命转 raw 峰值 ~20000/32767，**未饱和** → [FR-PY] 的 `360/48000`（FS ±245 dps）对真机合理，D.4 的 wrap 担忧基本排除（常速下）。
+
+**代码改动（第 2 轮）**：`web/src/motion/gestures.js`（阈值 retune）、`web/test/gestures.test.js`（gentle 用例）。
+
+### 待续
+
+- **左 Joy-Con** 单独一轮：按键掩码 / 摇杆偏移（J9）。
+- **手势方向**：盯屏迭代四方向轴符号 + `THRUST`/`SLASH` 门槛平衡（把硬件调参与 Mock 解耦）。
+- **`game.html`** Fruit Slash 真机跑一遍（#5）。
+- **Step D** 终端 `reader --source joycon2`（可选，Step E 已覆盖大部分）。
+- **Step F** 重连 5 次跑满 backoff 序列（J10 目前只观察到冷却现象）。
+- **Step G** 延迟分位数 p50/p95（J11）。
+- 温度 / 磁力计 / analog trigger 字段（抓取中恒 0 或 garbage）。

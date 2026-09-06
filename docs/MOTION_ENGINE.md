@@ -63,6 +63,19 @@ Joy-Con 指向正前方（远离玩家）：
 
 > 真机上若方向与体感相反（取决于 Joy-Con 姿态与 L/R），在 `GestureRecognizer` 构造参数里翻转对应轴符号即可，不动引擎其余部分。
 
+### 3.1 真机标定（2026-09-06，右 Joy-Con 2，macOS）
+
+实测角速度量级（wire 单位 rad/s）：静置 <0.05、手持轻晃 ~0.9、干脆挥击 ~1.6–2.0、**拼尽全力旋转峰值 ~2.7**。
+对照 Mock IMU 的合成挥击是 900 dps ≈ **15.7 rad/s**——高了约 6×。原 `enterSpeed 6.0 / fullSpeed 14.0` 在真机上**永远够不到**，每次挥击都落到 `THRUST` 分支。
+
+已改（`gestures.js` 顶部默认值）：`enterSpeed 6.0→1.5`、`exitSpeed 3.0→0.6`、`fullSpeed 14.0→2.6`。
+Mock IMU（15.7 rad/s）仍轻松越过新阈值，`gestures.test.js` 用硬编码 `peak:16`／已把"gentle"用例改成 `peak:1.0`，17 项 web 测试全过。
+
+**仍未解决（需盯屏迭代）**：
+- `THRUST` 判定在 swing 之前、门槛 `thrustAccel = 2.0 g`——真机手臂挥动的线加速度瞬间就 >2 g，导致 `THRUST` 抢在 swing 进入前触发，`SLASH_*` 出得很少。提高 `thrustAccel` 会撞到 Mock THRUST 的 `peak 3.2 g`，需要把硬件调参与 Mock 解耦（超出本次 bring-up 范围）。
+- 四方向轴符号（§3 表）在真机上尚未干净复核：初步测试里挥击多被 `+gyro.z` 主导、方向区分不稳，可能是握持姿态或右 Joy-Con 的"指向前方"基准与表格不一致。
+- 采样率 33.5 Hz 下一次快挥仅 ~5–7 帧，`windowSpan 0.35s` 峰值捕捉是否够待评估。
+
 ---
 
 ## 4. 手势判定算法（`GestureRecognizer`）
