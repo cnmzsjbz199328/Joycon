@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Motion Fruit Slash — Joy-Con 2</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row spread">
+        <h1>Motion Fruit Slash</h1>
+        <div class="links"><a href="./index.html">← Launcher</a><a href="./playground.html">Playground</a></div>
+      </div>
+      <div class="grid" style="margin-top:16px">
+        <div class="panel" id="conn"></div>
+        <div class="panel">
+          <div class="row spread">
+            <span class="pill">Score <b id="score" class="mono">0</b></span>
+            <span class="pill">Combo <b id="combo" class="mono">0</b></span>
+            <span class="pill">Slices <b id="slices" class="mono">0</b></span>
+          </div>
+          <canvas id="stage" style="height:520px; margin-top:12px"></canvas>
+          <div class="hint" id="note"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/game/main.js"></script>
+  </body>
+</html>
