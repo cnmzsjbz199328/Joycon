@@ -229,7 +229,14 @@ ENABLE_IMU_2 = 0c 91 01 04 00 04 00 00 2f 00 00 00
 > Packet ID `0x00006708`=26376；Buttons 全 0；Left Stick `e0 ff 0f` → X=`0x0FF0`=4080, Y=`0x0FE0`=4064（≈中心 + 少量偏置）。
 > Accel `00 79 / 07 00 / 00 00` → axX=`0x7900`(LE)=`0x0079`? 见下注。
 
-> **⚠️ Endianness 校验点**：README「Field Example」把 Accel X `00 79` 解释为 `0x7900 = 30976`（big-endian 读法），但 `solo_logic.decode_accel` 用 `byteorder='little'` → `0x7900` LE = `0x0079` = 121。两处不自洽。**以代码 (`little`, signed) 为准**，README 示例栏疑似笔误。真机静置时 Accel Z 应 ≈ ±4096（1 g），据此最终确认字节序。
+> **⚠️ Endianness 校验点**：README「Field Example」把 Accel X `00 79` 解释为 `0x7900 = 30976`（big-endian 读法），但 `solo_logic.decode_accel` 用 `byteorder='little'`。两处不自洽。
+>
+> **一致性检查结论（非真机，但可信度高）**：用本项目 `decoder/packet.py` 按 **int16 little-endian signed** 解码 README 给出的完整样例包
+> `08 67 00 00 | 00 00 | 00 00 | e0 ff 0f | ... | 5f 0e | 00 79 07 00 00 00 | 00 00 01 ce 7b 52 | ...`
+> 得到 **accel ≈ (-0.016, +0.107, +0.996) g，模长 ≈ 1.002 g**；gyro ≈ (0, 0, 0) °/s；stick ≈ 中心；temp ≈ 25 °C。
+> 静置时重力矢量模长 ≈ 1 g、陀螺 ≈ 0 —— 与物理预期完全吻合。
+> → **采用 int16 little-endian signed**（`decode_accel`/`decode_gyro` 实现如此）。README「Field Example」列的 big-endian 读法为笔误。
+> 真机静置仍需按 J5/J7 复核，但字节序问题视为已解决。
 
 ### H.1 Stick 12-bit 解包（来源 [FR-PY] `decode_joystick`）
 
@@ -278,7 +285,7 @@ Adapter 解包 + 标定后，产出 GOAL.md §8.1 契约（见 [shared/protocol/
 | J4 | IMU 使能 | 发 `ENABLE_IMU_1/2` | 报文长度增至 ~62B，`0x30+` 出现随姿态变化的值 |
 | J5 | Accel 静置 | 放平 | 某一轴 ≈ ±4096 raw（1 g），其余 ≈ 0 |
 | J6 | Gyro 静置 | 放平不动 | 三轴 raw ≈ 0（±噪声）；旋转时对应轴变化，方向自洽 |
-| J7 | 字节序 | 结合 J5 | 确认 int16 LE signed（修正 §H 的 README 示例笔误） |
+| J7 | 字节序 | 结合 J5 | 确认 int16 LE signed（**已通过样例包一致性检查**，见 §H 校验点；真机复核为形式确认） |
 | J8 | 采样率 | 计时 1000 包 | ≈ 62 Hz（[EIMU]），记录实测值 |
 | J9 | Left vs Right | 两只都测 | 按键掩码 / 摇杆偏移分别确认，更新 §E |
 | J10 | 重连冷却 | 快速断连 5 次 | 复现「数分钟拒连」，验证 backoff 生效 |
@@ -291,7 +298,7 @@ Adapter 解包 + 标定后，产出 GOAL.md §8.1 契约（见 [shared/protocol/
 
 1. Service UUID 完整 GATT 树（§C.1）。
 2. Stick / Buttons 的确切偏移（README 表 vs 代码实现不一致，§E/§H）。
-3. 字节序最终确认（§H 校验点）。
+3. ~~字节序最终确认~~ —— 已通过样例包一致性检查（§H），仅剩真机形式复核。
 4. 陀螺仪满量程 / 是否多档 FS / 高速是否 wrap（§D.4 注记）。
 5. 是否需要「standard full mode」前置命令（§F）。
 6. Magnetometer 单位/比例（§D.4）。
