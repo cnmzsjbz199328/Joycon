@@ -61,10 +61,20 @@ export class GestureRecognizer {
     const accelMag = Math.hypot(linAccel[0], linAccel[1], linAccel[2]);
     this.window.push({ t, gyro: gyro.slice(), linAccel: linAccel.slice(), speed, accelMag });
 
-    // THRUST: strong linear accel, modest rotation, respect refractory.
+    // THRUST: strong linear accel with LOW rotation across the whole recent
+    // window -- not just this frame. A slash also spikes linear accel on the
+    // wind-up, while its rotation is still ramping past enterSpeed; checking the
+    // instantaneous speed alone let THRUST fire first and the refractory then
+    // swallowed the slash. Requiring the window peak to stay sub-threshold hands
+    // any rotation burst to the swing path instead (real-hardware fix 2026-09-06).
+    const windowPeakSpeed = Math.max(
+      speed,
+      ...this.window.items.map((it) => it.speed),
+    );
     if (
       accelMag > this.thrustAccel &&
-      speed < this.enterSpeed &&
+      windowPeakSpeed < this.enterSpeed &&
+      !this._inSwing &&
       t - this._lastEmit > this.refractory
     ) {
       // direction = dominant linear-accel axis

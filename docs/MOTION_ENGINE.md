@@ -71,10 +71,17 @@ Joy-Con 指向正前方（远离玩家）：
 已改（`gestures.js` 顶部默认值）：`enterSpeed 6.0→1.5`、`exitSpeed 3.0→0.6`、`fullSpeed 14.0→2.6`。
 Mock IMU（15.7 rad/s）仍轻松越过新阈值，`gestures.test.js` 用硬编码 `peak:16`／已把"gentle"用例改成 `peak:1.0`，17 项 web 测试全过。
 
-**仍未解决（需盯屏迭代）**：
-- `THRUST` 判定在 swing 之前、门槛 `thrustAccel = 2.0 g`——真机手臂挥动的线加速度瞬间就 >2 g，导致 `THRUST` 抢在 swing 进入前触发，`SLASH_*` 出得很少。提高 `thrustAccel` 会撞到 Mock THRUST 的 `peak 3.2 g`，需要把硬件调参与 Mock 解耦（超出本次 bring-up 范围）。
-- 四方向轴符号（§3 表）在真机上尚未干净复核：初步测试里挥击多被 `+gyro.z` 主导、方向区分不稳，可能是握持姿态或右 Joy-Con 的"指向前方"基准与表格不一致。
-- 采样率 33.5 Hz 下一次快挥仅 ~5–7 帧，`windowSpan 0.35s` 峰值捕捉是否够待评估。
+**`THRUST` 抢占已修**（`gestures.js` `update()`）：原来 `THRUST` 只看当前帧转速，挥击起手转速还在爬坡时线加速度已 >2 g，`THRUST` 抢先触发、`refractory` 再吞掉 150 ms 后本该完成的 `SLASH`。改为看**滑动窗口内转速峰值**——最近 0.35 s 内只要越过 `enterSpeed` 就交给 swing 分支，不发 `THRUST`。
+
+**已验证方向：`SLASH_RIGHT`（右 Joy-Con，2026-09-06）**
+水平前挥（forehand，手腕带转让手柄"指向"扫过弧线）：稳定产生 `gyro.z` 正、峰值 1.8–2.2 rad/s → 识别器判 `SLASH_RIGHT`，强度 0.6–0.8，方向向量 ≈ `[-0.44, -0.15, +0.87]`。30 s / 22 次判定里 6 次 forehand 全部正确、且前面无 `THRUST` 抢跑。
+→ **§3 表的 `gyro.z + → SLASH_RIGHT` 对右 Joy-Con 成立，z 轴不用翻符号。**
+
+**仍待逐个做透**：
+- `SLASH_LEFT / UP / DOWN`：回挥（backhand）转速常掉到 1.5 以下 → 落回 `THRUST`；且左向比右向弱（用户手部力学）。是力度一致性 + 各轴符号的逐一复核，机制同 `SLASH_RIGHT`。
+- 用户天然动作是**整臂平移**（高线加速度、低转速）——那是 `THRUST`。要 `SLASH_*` 必须**转手柄**。产品上可考虑「低转速时按线加速度方向判 SLASH」，是引擎设计改动，超出 bring-up 范围。
+- `thrustAccel = 2.0 g` 提高会撞到 Mock THRUST 的 `peak 3.2 g`，硬件调参与 Mock 需解耦。
+- 采样率 33.5 Hz 下一次快挥仅 ~12–14 帧（`windowSpan 0.35s`），峰值捕捉实测够用。
 
 ---
 
