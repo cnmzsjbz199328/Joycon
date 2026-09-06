@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://joycon2-motion-platform/shared/protocol/schema.json",
+  "title": "Joy-Con 2 Motion Platform data contracts",
+  "description": "PROTOCOL_VERSION = 1. See shared/protocol/README.md.",
+  "definitions": {
+    "Vec3": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Envelope": {
+      "type": "object",
+      "required": ["v", "type", "data"],
+      "properties": {
+        "v": { "const": 1 },
+        "type": { "enum": ["hello", "status", "frame"] },
+        "data": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "Hello": {
+      "type": "object",
+      "required": ["adapter", "source", "rateHz"],
+      "properties": {
+        "adapter": { "type": "string" },
+        "source": { "enum": ["joycon2", "replay", "synthetic"] },
+        "rateHz": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "Status": {
+      "type": "object",
+      "required": ["connection", "calibrated"],
+      "properties": {
+        "connection": { "enum": ["connecting", "connected", "disconnected", "reconnecting", "cooldown", "stopped"] },
+        "controller": { "enum": ["left", "right", "unknown"] },
+        "calibrated": { "type": "boolean" },
+        "hint": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "InputFrame": {
+      "type": "object",
+      "required": ["timestamp", "seq", "controller", "buttons", "stick", "accelerometer", "gyroscope"],
+      "properties": {
+        "timestamp": { "type": "number", "description": "adapter monotonic seconds at BLE receipt" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "controller": { "enum": ["left", "right"] },
+        "buttons": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "stick": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number", "minimum": -1, "maximum": 1 },
+            "y": { "type": "number", "minimum": -1, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "accelerometer": { "$ref": "#/definitions/Vec3", "description": "g, calibrated" },
+        "gyroscope": { "$ref": "#/definitions/Vec3", "description": "rad/s, calibrated" },
+        "battery": {
+          "type": ["object", "null"],
+          "properties": {
+            "voltage": { "type": ["number", "null"] },
+            "current": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "temperature": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "MotionState": {
+      "type": "object",
+      "required": ["timestamp", "controller", "orientation", "angularVelocity", "linearAcceleration", "motionSpeed", "gesture"],
+      "properties": {
+        "timestamp": { "type": "number" },
+        "controller": { "enum": ["left", "right"] },
+        "orientation": {
+          "type": "object",
+          "required": ["quaternion", "euler"],
+          "properties": {
+            "quaternion": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "euler": {
+              "type": "object",
+              "required": ["pitch", "yaw", "roll"],
+              "properties": {
+                "pitch": { "type": "number" },
+                "yaw": { "type": "number" },
+                "roll": { "type": "number" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "angularVelocity": { "$ref": "#/definitions/Vec3" },
+        "linearAcceleration": { "$ref": "#/definitions/Vec3" },
+        "motionSpeed": { "type": "number", "minimum": 0 },
+        "gesture": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/GestureEvent" }]
+        }
+      },
+      "additionalProperties": false
+    },
+    "GestureEvent": {
+      "type": "object",
+      "required": ["gesture", "strength", "speed", "direction", "timestamp", "controller"],
+      "properties": {
+        "gesture": {
+          "enum": ["SLASH_LEFT", "SLASH_RIGHT", "SLASH_UP", "SLASH_DOWN", "THRUST", "SHAKE", "ROTATE"]
+        },
+        "strength": { "type": "number", "minimum": 0, "maximum": 1 },
+        "speed": { "type": "number", "minimum": 0 },
+        "direction": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 0,
+          "maxItems": 3
+        },
+        "timestamp": { "type": "number" },
+        "controller": { "enum": ["left", "right"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}
