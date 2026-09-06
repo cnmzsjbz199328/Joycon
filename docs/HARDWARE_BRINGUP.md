@@ -164,3 +164,32 @@ cd web && npm run dev
 - 浏览器 provider 切 `Joy-Con 1 (WebHID)`（若手边有一代）/ `Keyboard` / `Gamepad` / `Mock IMU`，Motion Engine 和游戏照常验收。
 - Joy-Con 2 部分保持 `EXPERIMENTAL`，在 `docs/TESTING.md` §3 如实写清楚**卡在 Step 几、什么现象、试过什么**。
 - 常见「换台机器就好」的情况：某些蓝牙芯片（尤其老的 Intel、部分 Linux BlueZ 版本）对 Joy-Con 2 的私有 GATT 支持差；换 OS 或换一个 USB BLE dongle 往往能解决。
+
+---
+
+## 5. 实测记录
+
+### 第 1 轮 — 2026-09-06，Mac mini（macOS 15，CoreBluetooth），右 Joy-Con 2
+
+**环境**：`.venv` + `bleak 3.0.2`；两只 Joy-Con 2（地址 macOS 随机 UUID）：
+- 右 `59F5F588-7FB0-D2F8-1D87-AFA2209F86AA`（广播名 `Joy-Con 2 (R)`）
+- 左 `BD708F44-2792-E1F3-F6B0-48B9B7851FCF`（广播名空 → side unknown）
+
+**做法**：`prototype.py` 跑 Step A/B/C；再用脚本化 90 s 动作抓取（`scratchpad/capture.py`，240 s 窗口逐包落盘）+ 离线分析（`scratchpad/analyze*.py`，按重力模长 / 陀螺能量暴力定位偏移）。
+
+**结果**（详见 [JOYCON2_PROTOCOL.md](./JOYCON2_PROTOCOL.md) §J 清单）：
+
+| 项 | 结论 |
+| --- | --- |
+| Step A 扫描 | ✅ 两只都识别（manuf 1363 + 前缀 `01 00 03 7e`） |
+| Step B 连接 + GATT | ✅ Service UUID = `ab7de9be-89fe-49ad-828f-118f09df7fd0`；未使能 IMU 报文 63 B / 28 Hz |
+| Step C IMU + 偏移 | ✅ 只发 `ENABLE_IMU_1/2` 即出 IMU（无需 full-mode 前置）。**报文 63 B（非 62）**。accel `0x30` / gyro `0x36` / 右 stick `0x0D`——**与代码一致**，只订正 battery `0x1C→0x1F`、补 C 键 `0x000040` |
+| accel | ✅ 六朝向重力单轴 ≈ 1.00 g；int16 LE signed 确认 |
+| gyro | 🟡 静置 <2 dps、转动定轴自洽；峰值仅 ~95 dps 无 wrap；未做精确角度标定 |
+| 采样率 | 🟡 **33.5 Hz**（疑 macOS 连接间隔限制）；`0x00` = 毫秒时间戳 |
+| 按键（右） | ✅ 8 位 + StickPress + **C=`0x40`(字节0x05 bit6)** 逐个确认；plus/home 未分辨 |
+| 重连冷却 | 🟡 观察到：连过一次后短时间再连 `TimeoutError`（即社区说的控制器级冷却）；未跑满 backoff 序列 |
+
+**代码改动**：`adapter/src/protocol/constants.py`（Service UUID、battery 偏移、注释）、`adapter/src/decoder/buttons.py`（C 键）。19 项 pytest 仍全过；真机包端到端 `decode_packet` 验证通过。
+
+**待续**：左 Joy-Con 单独一轮（J9）；Step D 终端 reader；Step E 完整链路 + 浏览器（Playground / 3D 剑 / Fruit Slash / 手势轴符号）；Step F 重连 5 次；Step G 延迟分位数。

@@ -22,7 +22,9 @@ MANUFACTURER_PREFIX = bytes([0x01, 0x00, 0x03, 0x7E])
 # --- GATT characteristics ----------------------------------------------------  [FR-PY]
 INPUT_REPORT_UUID = "ab7de9be-89fe-49ad-828f-118f09df7fd2"   # Notify
 WRITE_COMMAND_UUID = "649d4ac9-8eb7-4e6c-af44-1ea54fe5f005"  # Write
-# Service UUID: unverified -- dump full GATT tree on real hardware (protocol doc C.1)
+# Service UUID: verified on hardware 2026-09-06 (macOS, both Joy-Con 2 units) --
+# both characteristics above live under this proprietary primary service.
+INPUT_SERVICE_UUID = "ab7de9be-89fe-49ad-828f-118f09df7fd0"
 
 # --- Command / subcommand ids ---------------------------------------------  [FR-PY]
 COMMAND_LEDS = 0x09
@@ -43,11 +45,13 @@ LED_PATTERN_BY_PLAYER = {
     5: 0x09, 6: 0x05, 7: 0x0D, 8: 0x06,
 }
 
-# --- Packet layout (Left Joy-Con, IMU enabled, ~62 bytes) ----------------  [FR-PY]
+# --- Packet layout (IMU enabled) -----------------------------------  [FR-PY] + HW
 # Byte offsets. IMU / battery / temperature offsets are identical for L and R;
 # button + stick reads differ per side (see BUTTON_STATE_* and STICK_SLICE_*).
-OFF_PACKET_ID = 0x00        # uint32 LE, sequence/timestamp
-OFF_BUTTONS = 0x04          # button bitmap region
+# "HW" notes: right Joy-Con 2, macOS CoreBluetooth, 2026-09-06
+# (see docs/HARDWARE_BRINGUP.md). Real packets are 63 bytes, not 62.
+OFF_PACKET_ID = 0x00        # uint32 LE -- HW: millisecond timestamp (~1000/s), monotonic
+OFF_BUTTONS = 0x04          # button bitmap region -- HW: bits live in bytes 0x04 / 0x05
 OFF_LEFT_STICK = 0x08       # 3 bytes, 12-bit packed  (doc: layout table)
 OFF_RIGHT_STICK = 0x0B      # 3 bytes, 12-bit packed
 OFF_MOUSE_X = 0x0E
@@ -55,15 +59,15 @@ OFF_MOUSE_Y = 0x10
 OFF_MAG_X = 0x16
 OFF_MAG_Y = 0x18
 OFF_MAG_Z = 0x1A
-OFF_BATTERY_VOLTAGE = 0x1C  # uint16 LE, mV
-OFF_BATTERY_CURRENT = 0x1E  # int16 LE, /100 = mA
-OFF_TEMPERATURE = 0x2E      # int16 LE, 25 + raw/127 (deg C)
-OFF_ACCEL = 0x30            # 3x int16 LE
-OFF_GYRO = 0x36             # 3x int16 LE
-OFF_TRIGGER_L = 0x3C        # uint8
-OFF_TRIGGER_R = 0x3D        # uint8
+OFF_BATTERY_VOLTAGE = 0x1F  # uint16 LE, mV -- HW: 0x1F reads ~3690 mV; the doc's 0x1C reads 0
+OFF_BATTERY_CURRENT = 0x1E  # int16 LE, /100 = mA -- HW: reads 0 at idle; UNVERIFIED
+OFF_TEMPERATURE = 0x2E      # int16 LE, 25 + raw/127 -- HW: negative garbage here; UNVERIFIED
+OFF_ACCEL = 0x30            # 3x int16 LE -- HW-VERIFIED: |a| = 1.00 g in all 6 orientations
+OFF_GYRO = 0x36             # 3x int16 LE -- HW-VERIFIED: <2 dps at rest, axis-correct on rotation
+OFF_TRIGGER_L = 0x3C        # uint8 -- HW: reads 0 (right JC ZR digital in this mode); UNVERIFIED
+OFF_TRIGGER_R = 0x3D        # uint8 -- UNVERIFIED
 
-MIN_IMU_PACKET_LEN = 0x3E   # 62 bytes
+MIN_IMU_PACKET_LEN = 0x3E   # 62 -- floor for the "IMU enabled?" gate; real packets are 63
 
 # Button-state window as used by the reference decoder ([FR-PY] solo_logic.py):
 #   big-endian int over a 3-byte slice, start offset differs per side.
@@ -95,4 +99,9 @@ TEMP_RAW_DIVISOR = 127.0
 RECONNECT_COOLDOWN_HINT_S = 180
 
 # --- Sampling ------------------------------------------------------------------ [EIMU]
+# [EIMU] claims 62 Hz native. HW 2026-09-06: measured 33.5 Hz notification rate on
+# macOS CoreBluetooth (28 Hz before IMU enable) -- almost certainly BLE
+# connection-interval limited on this stack, not a controller cap. One IMU sample
+# per packet (12-byte block 0x30..0x3B, no sub-sampling). Used only by the
+# synthetic/replay sources for pacing; the live path never resamples.
 NOMINAL_SAMPLE_RATE_HZ = 62

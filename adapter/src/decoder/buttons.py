@@ -2,6 +2,10 @@
 
 The reference decoder reads a big-endian integer over a 3-byte slice whose start
 offset differs per side (see constants.BUTTON_STATE_SLICE_*).
+
+RIGHT masks verified on hardware 2026-09-06 (see docs/HARDWARE_BRINGUP.md): every
+face/shoulder/rail button toggled its listed bit exactly, and the new Joy-Con 2
+"C" button was captured at 0x000040 (byte 0x05, bit 6). LEFT still [FR-PY]-only.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ BUTTON_MASKS_RIGHT: dict[str, int] = {
     "stick": 0x000004,
     "sl": 0x001000,
     "sr": 0x002000,
-    # "c": 0x??????,  # Joy-Con 2 new button -- unverified, capture on hardware
+    "c": 0x000040,  # Joy-Con 2 "C" button -- HW-verified 2026-09-06 (byte 0x05 bit 6)
 }
 
 BUTTON_MASKS_LEFT: dict[str, int] = {

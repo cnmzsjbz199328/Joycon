@@ -16,10 +16,17 @@ The first full motion demo is **Motion Fruit Slash**. Adding Tennis, Boxing,
 Bowling, … later means writing a new consumer of the same `MotionState` /
 `GestureEvent` contract — nothing below the game changes.
 
-> **Joy-Con 2 BLE is EXPERIMENTAL.** The adapter is built from community reverse
-> engineering (attributed line-by-line in [docs/JOYCON2_PROTOCOL.md](docs/JOYCON2_PROTOCOL.md))
-> but has **not** been verified on real hardware in this repo. Everything above the
-> adapter is fully working and verified through fallback providers
+> **Joy-Con 2 BLE — core link verified on hardware (2026-09-06), some items pending.**
+> First bring-up on a Mac mini (macOS / CoreBluetooth) with a real **right Joy-Con 2**:
+> scan → connect → enable IMU → decode all confirmed. Accelerometer reads 1.00 g in every
+> orientation (int16 LE), gyro is axis-correct, every right-side button + the new **C**
+> button mapped, Service UUID filled in. Corrections landed in
+> [`constants.py`](adapter/src/protocol/constants.py) / [`buttons.py`](adapter/src/decoder/buttons.py).
+> Still open: left Joy-Con pass, latency percentiles, high-rate gyro full-scale, browser
+> end-to-end. Sample rate measured 33.5 Hz on this stack (likely a macOS BLE limit, not the
+> controller). Full log: [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) §5 ·
+> checklist: [docs/JOYCON2_PROTOCOL.md](docs/JOYCON2_PROTOCOL.md) §J.
+> Everything above the adapter was already verified through fallback providers
 > (Mock IMU / Keyboard / Gamepad / Joy-Con 1). See [docs/TESTING.md](docs/TESTING.md) §3.
 
 ---
