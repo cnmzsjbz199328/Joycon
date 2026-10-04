@@ -16,15 +16,17 @@ The first full motion demo is **Motion Fruit Slash**. Adding Tennis, Boxing,
 Bowling, … later means writing a new consumer of the same `MotionState` /
 `GestureEvent` contract — nothing below the game changes.
 
-> **Joy-Con 2 BLE — core link verified on hardware (2026-09-06), some items pending.**
-> First bring-up on a Mac mini (macOS / CoreBluetooth) with a real **right Joy-Con 2**:
-> scan → connect → enable IMU → decode all confirmed. Accelerometer reads 1.00 g in every
-> orientation (int16 LE), gyro is axis-correct, every right-side button + the new **C**
-> button mapped, Service UUID filled in. Corrections landed in
-> [`constants.py`](adapter/src/protocol/constants.py) / [`buttons.py`](adapter/src/decoder/buttons.py).
-> Still open: left Joy-Con pass, latency percentiles, high-rate gyro full-scale, browser
-> end-to-end. Sample rate measured 33.5 Hz on this stack (likely a macOS BLE limit, not the
-> controller). Full log: [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) §5 ·
+> **Joy-Con 2 BLE — core link verified on hardware (right 2026-09-06, left 2026-09-28), some items pending.**
+> Bring-up on a Mac mini (macOS / CoreBluetooth) with real **left + right Joy-Con 2** units:
+> scan → connect → enable IMU → decode all confirmed on both sides. Accelerometer reads 1.00 g in
+> every orientation (int16 LE), gyro is axis-correct, every button on both sides + the new **C**
+> button mapped, Service UUID filled in. Left-side pass reused the right-side assumptions
+> ([`constants.py`](adapter/src/protocol/constants.py) / [`buttons.py`](adapter/src/decoder/buttons.py))
+> as-is — all ten left buttons and the stick slice matched with zero code changes needed.
+> Still open: gesture tuning on the left unit (`SLASH_RIGHT` is only proven out on the right),
+> latency percentiles, high-rate gyro full-scale. Sample rate measured ~33 Hz on this stack
+> (likely a macOS BLE limit, not the controller). Full log:
+> [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) §5 ·
 > checklist: [docs/JOYCON2_PROTOCOL.md](docs/JOYCON2_PROTOCOL.md) §J.
 > Everything above the adapter was already verified through fallback providers
 > (Mock IMU / Keyboard / Gamepad / Joy-Con 1). See [docs/TESTING.md](docs/TESTING.md) §3.
@@ -102,6 +104,8 @@ web/
 
 docs/
   RESEARCH.md            Phase 0 — ecosystem, per-project REUSE/REFERENCE/DO NOT USE
+  CALIBRATION_RESEARCH.md  Calibration deep dive — official flow vs. in-game "face the
+                           screen" yaw anchor vs. SPI factory calibration (open question)
   JOYCON2_PROTOCOL.md    Phase 1 — BLE type, UUIDs, packet layout, sources, J1-J12 checklist
   ARCHITECTURE.md        Phase 1 — 3-approach comparison, ADR log
   MOTION_ENGINE.md       Phase 6 — capabilities, filter selection

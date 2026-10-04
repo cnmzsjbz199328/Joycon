@@ -231,6 +231,7 @@
 4. **采样率基准 62 Hz**，WebSocket 不得降采样（GOAL.md §9）。
 5. **必做 reconnect backoff**：社区一致报告「反复连接触发数分钟控制器级冷却」。
 6. **姿态解算**：Complementary 为主，Madgwick 备选（见 MOTION_ENGINE.md）。
+7. **校准专题**：官方「放平」系统级校准 vs. 游戏内「面向屏幕」朝向锚点 vs. Joy-Con 2 出厂 SPI 校准的可用性，另见 [CALIBRATION_RESEARCH.md](./CALIBRATION_RESEARCH.md)。
 
 ---
 

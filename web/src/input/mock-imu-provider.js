@@ -14,7 +14,7 @@ const SCRIPT = [
   { at: 4.0, kind: "SLASH_LEFT", axis: "z", peak: -900 },
   { at: 6.0, kind: "SLASH_UP", axis: "x", peak: 900 },
   { at: 8.0, kind: "SLASH_DOWN", axis: "x", peak: -900 },
-  { at: 10.0, kind: "THRUST", axis: "accelY", peak: 3.2 },
+  { at: 10.0, kind: "THRUST", axis: "accelY", peak: 6.0 },
 ];
 const CYCLE = 12.0;
 const BURST = 0.14; // seconds

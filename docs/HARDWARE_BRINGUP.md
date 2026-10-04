@@ -212,31 +212,111 @@ cd web && npm run dev
 
 **代码改动（第 2 轮）**：`web/src/motion/gestures.js`（阈值 retune + `THRUST` window-peak）、`web/test/gestures.test.js`（gentle 用例）。
 
-### 下一步计划（下次接着做）
+### 第 3 轮 — 2026-09-28，左 Joy-Con 2 复核（J9）
 
 两只 Joy-Con 2 的地址（macOS 随机 UUID，重启蓝牙后可能变，届时重新 `--scan`）：
 - 右 `59F5F588-7FB0-D2F8-1D87-AFA2209F86AA`（广播名 `Joy-Con 2 (R)`）—— 已验证
-- 左 `BD708F44-2792-E1F3-F6B0-48B9B7851FCF`（广播名空 → side unknown）—— **待测**
+- 左 `BD708F44-2792-E1F3-F6B0-48B9B7851FCF`（广播名 `Joy-Con 2 (L)`）—— **本轮验证完成**
 
-工具都在 `scratchpad/`（本次会话生成，非仓库文件）：`capture.py`（脚本化抓取，逐包落盘）、`analyze2.py` / `analyze3.py`（暴力定位偏移 + 解码）、`ws_gyro.py` / `mon_swing.py`（实时监控）、`pw_*.py`（Playwright 驱动浏览器）。
+工具重新写在 `scratchpad/`（本次会话生成，非仓库文件，环境重启后已丢失，照旧重建）：`capture.py`（连接 + 使能 IMU + 逐包落盘 JSONL + 实时打印按键/accel/gyro/stick 变化，用于边做动作边核对）。
 
-**A. 左 Joy-Con 复核（J9）— 优先**
-1. 只按左 Joy-Con 的 Sync，`.venv/bin/python -m adapter.src.bluetooth.prototype --scan` 确认地址。
-2. `.venv/bin/python scratchpad/capture.py <左地址> --seconds 240 --out scratchpad/cap_left.jsonl`，人按动作表（§2 Step C 那套：静置六朝向 + 转动 + **逐个按 D-Pad / L / ZL / − / stick / SL / SR**）。
-3. `.venv/bin/python scratchpad/analyze2.py scratchpad/cap_left.jsonl` → 核对：
-   - 左按键掩码（`BUTTON_MASKS_LEFT`，byte `0x04` big-endian，注意左是 `data[4:7]`）—— 现有表来自 [FR-PY] 未经真机，重点看 D-Pad 四向 + `−` + stick 按下。
-   - 左摇杆在 `data[10:13]`（Step B 已初步见 `8a b7 84` ≈ 中心，确认推杆四向正负）。
-   - accel/gyro 偏移应与右一致（`0x30` / `0x36`）。
-4. 有出入就改 `constants.py` / `buttons.py`，`cd adapter && ../.venv/bin/python -m pytest -q` 不破坏 roundtrip。
-5. 回填本文件 §J 的 J9、`JOYCON2_PROTOCOL.md` §E。
+流程：只按左 Joy-Con 的 Sync → `--scan` 确认地址（**注意广播窗口只有几十秒，过期要重新按 Sync 才能连上**，本轮踩了一次坑）→ `capture.py <左地址> --side left --seconds 300` → 人按 §2 Step C 那套动作（静置 → 慢转 90° → 快速转 → 摇杆四向 → 逐个按 D-Pad/−/L/ZL/stick/SL/SR）。
 
-**B. 手势四方向 + game.html（Step E #4/#5）— 需要人盯屏**
-1. 两个终端：`.venv/bin/python -m adapter.src.service --source joycon2 --side <l/r>` + `cd web && npm run dev`。
-   注意 `service.py` 扫不到设备会**整个退出**（不重试）——先按住 Sync 出跑马灯再启动。
-2. 浏览器开 `localhost:5173/playground.html`，`window.__engine` 已无临时探针；要实时看内部判定就临时加回 `window.__engine = engine`（`playground/main.js:11`）跑 `scratchpad/pw_instr2.py`，完事 `git checkout`。
-3. 逐个做透 `SLASH_LEFT / UP / DOWN`（同 `SLASH_RIGHT` 套路，见 [MOTION_ENGINE.md](./MOTION_ENGINE.md) §3.1）：确认各轴符号、调 `enterSpeed`（现 1.5，回挥偏弱可试 1.3）。
-4. 四方向都稳后开 `game.html`，验 #5：切水果加分、切炸弹扣分不结束。
-5. 若某方向体感反了 → `gestures.js` `_classify()` 翻对应轴符号，更新 §3 表。
+| 验证项 | 结果 |
+| --- | --- |
+| 连接 + IMU 使能 | ✅ 与右一致，`ENABLE_IMU_1/2` 后 63 字节报文含活值 |
+| Accel 静置 | ✅ 单轴 ≈0.98–1.0 g，其余 ≈0（int16 LE 假设成立） |
+| Gyro 静置/转动/快转 | ✅ 静置 <0.2 dps；慢转、快转（峰值约 -46.5 dps）方向自洽，**未见溢出/wrap** |
+| 摇杆 `data[10:13]` | ✅ 回中 ≈0，四向推杆方向正确、连贯（非垃圾值）；幅度约 ±0.5–0.6，未测到贴满 ±1.0（大概率推杆力度问题，非解码问题） |
+| 十个按键掩码（D-Up/Down/Left/Right/−/L/ZL/Stick/SL/SR） | ✅ **全部与 `BUTTON_MASKS_LEFT` 现有假设完全一致，无需改动任何常量** |
+| 采样率 | 33.2 Hz（与右一致，确认是 macOS BLE 连接间隔限制，非单只手柄问题） |
+
+**结论：J9 完成，`constants.py` / `buttons.py` 左侧假设全部通过真机验证，本轮零代码改动**（只更新了文档/常量注释里的 HW-VERIFIED 标注）。已回填 `JOYCON2_PROTOCOL.md` §E、§J（J9）、§K。
+
+**B. 手势四方向 + game.html（Step E #4/#5）— 需要人盯屏。**
+
+### 第 4 轮 — 2026-09-28（同日），左 Joy-Con 2 手势调参
+
+不用 Playwright 探针读 `window.__engine`（那套一次性脚本已随会话丢失），改用 headless Playwright 常驻监看 `#gesture` DOM 文本 + 临时 `console.log` 读 `GestureRecognizer` 内部状态（`accelMag`/`windowPeakSpeed`/`holdCount`），工具在 `scratchpad/watch_gesture.py`（本会话生成，非仓库文件）。两个终端起 `adapter.src.service --side left` + `npm run dev` 不变。
+
+用户自然挥动（不是刻意孤立的单次全力挥砍）后发现左手柄挥动几乎全被判成 `THRUST`，查明是两层问题（详见 [MOTION_ENGINE.md](./MOTION_ENGINE.md) §3.2）：
+1. `THRUST` 判定时机太早（线加速度比转速先冲高）→ 加了 `thrustHoldFrames`（需连续 N 帧低转速+高加速度才下结论，默认 4）。
+2. **真正根因**：自然/连贯动作的挥砍转速峰值（1.2–1.5 rad/s）本来就低于 9-06 单次全力挥砍标定出的 `enterSpeed=1.5` → 降到 `1.1`。
+3. 用户提出人的连贯反向动作（挥上接挥下、挥左接挥右）不会经过 `exitSpeed`，原峰值追踪只记单个最大值会丢一半手势 → 加了同轴反号即分段的逻辑。
+
+修完左手柄自然连贯挥动 `SLASH_LEFT/RIGHT/DOWN`（`UP` 也出现过）11/12 次判对，1 次残留 `THRUST` 误判（已知限制，见 §3.2，判断不值得继续调）。`web/test/gestures.test.js` 全过（17/17），`mock-imu-provider.js` 的合成 THRUST 峰值从 3.2 提到 6.0 g 配合新的连续帧要求。
+
+**代码改动**：`web/src/motion/gestures.js`（`enterSpeed 1.5→1.1`、新增 `thrustHoldFrames`、新增峰值同轴反号分段）、`web/src/input/mock-imu-provider.js`（THRUST 合成峰值 3.2→6.0）。
+
+**仍未做**：`game.html` 切水果验收（#5）——手势基本稳定后应该顺理成章，但还没实测过。
+
+### 第 5 轮（计划，尚未执行）— 左 Joy-Con 2，UP/DOWN 轴单独调参
+
+**触发**：用户反馈实际体验是"上下反应慢、左右反应快"。已排除的假设：这**不是** Nintendo Switch Sports 那种"对屏幕按键"朝向（yaw）校准缺失导致的——那个校准解决的是水平朝向漂移，和 pitch（上下）轴的响应速度是两个正交的问题；代码里也确认过 `motion-engine.js` 对 x/y/z 三轴用的是同一套去偏置/死区/低通（`gyroF = this.gyroLP.update(...)`），没有针对某个轴的额外滤波延迟。完整推理见与用户的讨论（本文件对应会话）。
+
+**工作假设（待验证，不要预设结论）**：pitch 轴（`gx`，对应 SLASH_UP/DOWN）的自然挥动峰值转速，可能比 yaw 轴（`gz`，对应 SLASH_LEFT/RIGHT）更低——类似第 4 轮发现的"自然连贯动作峰值低于孤立全力挥砍标定值"，但可能在 pitch 轴上更严重（人体工学：手腕上下屈伸的角速度范围通常小于左右尺偏/桡偏，`docs/MOTION_ENGINE.md` §3.1 已记录"左向比右向弱"的同类现象）。当前 `enterSpeed`/`exitSpeed` 是套在 `speed = hypot(gx,gy,gz)` 整体幅值上的**单一标量**，不分轴——如果 pitch 轴天然峰值系统性偏低，单一标量阈值可能无法同时兼顾两个轴，可能需要引入**分轴阈值**（这是比第 4 轮更大的架构改动，动手前应该先跟用户确认要不要做，不要直接实现）。
+
+**执行前必读**：`docs/MOTION_ENGINE.md` §3.2（第 4 轮的完整问题分析）、`web/src/motion/gestures.js`（现状代码）。
+
+**测试节奏（重要，参考本项目记忆 `joycon2-hardware-collab-style`）**：
+- 开始前先跟用户说清楚打算测几轮、什么条件下算完成（例如"先收集一轮数据，改一次，验证一次；多数判对就停"），不要开放式"再挥几次"循环。
+- 优先一轮拿到足够信息（用临时 debug log 直接读内部数值），而不是"猜一个阈值→再测一轮→猜下一个"来回试探。
+
+**步骤**：
+1. 环境：确认 `.venv/bin/python --version` 能跑；若报 "no such file or directory"，先 `brew link python@3.14`（本机已知会反复失效）。
+2. 左 Joy-Con 按 Sync（广播窗口只有几十秒，别扫描完拖久了再连）→
+   `.venv/bin/python -m adapter.src.bluetooth.prototype --scan --scan-timeout 12` 确认地址 →
+   立刻 `.venv/bin/python -m adapter.src.service --source joycon2 --side left`（后台）。
+3. `cd web && npm run dev`（后台）。
+4. 重建 `scratchpad/watch_gesture.py`（本会话原文见下，非仓库文件，需要时直接照抄）：
+
+   ```python
+   """Headless Playwright watcher for the Motion Playground's live #gesture readout."""
+   from playwright.sync_api import sync_playwright
+   import time
+
+   URL = "http://localhost:5173/playground.html"
+
+   with sync_playwright() as p:
+       browser = p.chromium.launch(headless=True)
+       page = browser.new_page()
+       page.add_init_script("window.__DEBUG_THRUST = true;")
+       page.on("console", lambda msg: print(f"[console] {msg.text}", flush=True) if "[DBG]" in msg.text else None)
+       page.goto(URL)
+       page.wait_for_load_state("networkidle")
+       page.click(".cp-connect")
+       page.wait_for_function("document.querySelector('.cp-conn')?.textContent === 'Connected'", timeout=15000)
+       print(f"connected, controller={page.locator('.cp-ctrl').text_content()}", flush=True)
+       page.wait_for_function("document.querySelector('.cp-cal')?.textContent === 'Calibrated'", timeout=15000)
+       print("calibrated, watching #gesture ...", flush=True)
+       last = None
+       t0 = time.monotonic()
+       while True:
+           text = page.locator("#gesture").text_content()
+           if text != last and text and "waiting for motion" not in text:
+               last = text
+               print(f"[{time.monotonic() - t0:7.2f}s] GESTURE: {text}", flush=True)
+           elif text != last:
+               last = text
+           time.sleep(0.1)
+   ```
+
+5. 在 `web/src/motion/gestures.js` 的 `update()` 里、算完 `windowPeakSpeed` 之后，临时加一行（第 4 轮用过同样的手法，测完要删掉，不要提交）：
+   ```js
+   if (globalThis.__DEBUG_THRUST) {
+     console.log(`[DBG] t=${t.toFixed(3)} gx=${gyro[0].toFixed(2)} gy=${gyro[1].toFixed(2)} gz=${gyro[2].toFixed(2)} speed=${speed.toFixed(2)} windowPeakSpeed=${windowPeakSpeed.toFixed(2)}`);
+   }
+   ```
+6. 后台跑 `watch_gesture.py`（输出重定向到文件，例如 `> watch.log 2>&1`，用 `run_in_background`）；确认 adapter 日志 `clients=1`（不是 0——0 说明网页没连上，见第 4 轮踩过的坑）。
+7. 让用户**自然地、连贯地**只做上/下方向挥动（不要求刻意用力，就是平时会做的动作），一次性做一轮（比如 8-10 次），不要来回反复确认。
+8. 读 `watch.log`：
+   - 统计 `SLASH_UP` / `SLASH_DOWN` 命中率。
+   - 对每次挥动，看 `[DBG]` 行里 `gx`（pitch 分量）的峰值，和已知的 yaw 轴基线（左右挥动峰值 1.2–1.5 rad/s，现 `enterSpeed=1.1` 能覆盖）对比：明显更低就证实了工作假设。
+9. 决策：
+   - 若 pitch 峰值和 yaw 峰值量级相近（也是 1.1+ 能覆盖的范围）→ 说明不是分轴阈值问题，可能是别的原因（比如这次样本恰好挥得轻），如实汇报，不要强行调参凑数据。
+   - 若 pitch 峰值系统性更低（比如普遍 <1.0）→ 向用户说明"pitch 轴需要专门更低的阈值"这个判断，**问用户要不要做分轴阈值**（架构改动）还是先简单地把 `enterSpeed` 整体再降一点（简单但会牺牲左右方向的抗噪性，这个 trade-off 要讲清楚，不要替用户决定）。
+10. 改完照第 4 轮的模式验证：跑 `web/test/gestures.test.js`（`cd web && npm test`），再拿真机验证一轮，达到和第 4 轮相当的命中率（比如 8/10+）就停，更新本文件 + `docs/MOTION_ENGINE.md` §3（新增 §3.3 或并入 §3.2）+ 项目记忆。
+11. UP/DOWN 稳定后才进入 `game.html` 验收（Step E #5）——不要在手势还不稳的时候去测游戏局面。
 
 **C. 收尾项**
 - Step F：快速断连 5 次，看 `service.py` 日志 backoff `1→2→4→…→60s` + 第 4 次提示等待（J10）。

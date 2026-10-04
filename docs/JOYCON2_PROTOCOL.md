@@ -1,9 +1,9 @@
 # docs/JOYCON2_PROTOCOL.md — Joy-Con 2 协议摘要
 
 > 对应 GOAL.md **Phase 1**。
-> **状态：核心链路已在真机验证（2026-09-06，右 Joy-Con 2，macOS CoreBluetooth）。** 详见 [HARDWARE_BRINGUP.md](./HARDWARE_BRINGUP.md) §「实测记录」。
-> 本文件汇总社区逆向成果并逐条标注来源；`[未真机验证]` 表示尚未复核，`[真机确认 2026-09-06]` 表示已用 `adapter/src/bluetooth/prototype.py` + 脚本化动作抓取核对。
-> 仍待办：左 Joy-Con 单独复核（J9）、延迟分位数（J11）、高速旋转陀螺满量程（D.4）、温度/磁力计字段。
+> **状态：核心链路已在真机验证（2026-09-06 右 Joy-Con 2 / 2026-09-28 左 Joy-Con 2，macOS CoreBluetooth）。** 详见 [HARDWARE_BRINGUP.md](./HARDWARE_BRINGUP.md) §「实测记录」。
+> 本文件汇总社区逆向成果并逐条标注来源；`[未真机验证]` 表示尚未复核，`[真机确认 2026-09-06]` / `[真机确认 2026-09-28]` 表示已用 `adapter/src/bluetooth/prototype.py` + 脚本化动作抓取核对。
+> 仍待办：延迟分位数（J11）、高速旋转陀螺满量程（D.4）、温度/磁力计字段。
 >
 > 来源代号：
 > - **[FR-PY]** = `TheFrano/joycon2py`（README 布局表 + `main.py` + `solo_logic.py`），布局原始提供者 `@german77`。
@@ -128,7 +128,8 @@ Buttons ✅、单摇杆（Left Joy-Con 用 Left Stick，Right Joy-Con 用 Right 
   - Left Joy-Con 读 `data[10:13]`（≈ `0x0A`），Right Joy-Con 读 `data[13:16]`（≈ `0x0D`）。
   - `[真机 2026-09-06 确认（右）]`：右摇杆在 **`data[13:16]`（0x0D–0x0F）**，12-bit 解包（§H.1）中心 ≈ 2047/2047，推杆时 x/y 摆到 ~900..3300。
     左摇杆槽位 `data[10:13]` 在右 Joy-Con 上是恒定占位 `ff f7 7f`（解出正好 2047/2047）。
-    → **实现取的 `0x0A` / `0x0D` 正确**，README 布局表的 `0x08` / `0x0B` 是错的。左 Joy-Con 的 `data[10:13]` 待 J9 复核（Step B 里已见 `8a b7 84` → ~1930/2123，接近中心，初步 OK）。
+    → **实现取的 `0x0A` / `0x0D` 正确**，README 布局表的 `0x08` / `0x0B` 是错的。
+  `[真机 2026-09-28 确认（左）]`：左 Joy-Con `data[10:13]` 摇杆推四方向 + 回中，值随推杆方向连贯变化（非垃圾值），回中 ≈ `(-0.06,+0.07)`；四向推杆幅度约 ±0.5–0.6（未测到贴到 ±1.0 满量程，大概率是推杆力度问题而非解码问题，非阻塞项）。
 - 按键位定义（[FR-PY] `solo_logic.MASKS`，`state` 为 big-endian 3 字节整数后的掩码）：
 
 | 边 | 键 | mask |
@@ -157,6 +158,7 @@ Buttons ✅、单摇杆（Left Joy-Con 用 Left Stick，Right Joy-Con 用 Right 
 
 > `C` 按钮（Joy-Con 2 新增，位于右 Joy-Con）：**`[真机 2026-09-06 确认]` mask `0x000040`**（3 字节 big-endian state 里 = 字节 `0x05` 的 bit 6）。已写入 `adapter/src/decoder/buttons.py` 的 `BUTTON_MASKS_RIGHT["c"]`。
 > 右侧 A/B/X/Y/R/ZR/SL/SR 掩码逐个按键实测，与 [FR-PY] 表**完全一致**；`stick`(按下) = `0x000004` 也确认。`plus` / `home` 未单独分辨（只抓到一次 `0x05` bit 4，可能是其一）。
+> **`[真机 2026-09-28 确认（左）]`**：左侧 D-Up/D-Down/D-Left/D-Right/−/L/ZL/Stick 按下/SL/SR **十个键逐个实测，掩码与上表完全一致，无需改动 `BUTTON_MASKS_LEFT`**。
 
 ---
 
@@ -303,7 +305,7 @@ Adapter 解包 + 标定后，产出 GOAL.md §8.1 契约（见 [shared/protocol/
 | J6 | Gyro 静置 / 转动 | 🟡 | 静置三轴 < 2 dps；转动对应轴响应、方向自洽。积分幅度偏小（动作不标准），未做精确标定 |
 | J7 | 字节序 | ✅ | int16 **little-endian signed** 确认（LE 才得 1 g） |
 | J8 | 采样率 | 🟡 | 实测 **33.5 Hz**（macOS BLE 连接间隔限制？）≠ [EIMU] 的 62 Hz。`0x00` 是毫秒时间戳 |
-| J9 | Left vs Right | 🟡 | 右：按键 8 位 + C + stick + 摇杆槽全确认。**左：待单独抓一轮** |
+| J9 | Left vs Right | ✅ | 右：按键 8 位 + C + stick + 摇杆槽全确认。左（2026-09-28）：十键掩码 + 摇杆槽 `data[10:13]` + accel/gyro 偏移全确认，与 [FR-PY] 假设一致，**无需改动常量** |
 | J10 | 重连冷却 | 🟡 | 已观察到：快速重连触发数分钟拒连（连过一次后再连 `TimeoutError`）。未跑满 5 次 backoff 序列 |
 | J11 | 延迟 | ⬜ | 待做（Step G） |
 | J12 | C 按钮 / 出厂标定块 | 🟡 | **C 键 mask `0x000040` 确认**（§E 已补）。出厂标定块未找（继续用静置标定） |
@@ -319,14 +321,14 @@ Adapter 解包 + 标定后，产出 GOAL.md §8.1 契约（见 [shared/protocol/
 - ~~Stick 偏移~~：右 = `data[13:16]`，左槽位占位 `ff f7 7f`（§E）；代码取值正确。
 - ~~每包 IMU 子采样~~：无，单组（§D.2）。
 - ~~是否需要 standard full mode 前置命令~~：不需要，只发 `ENABLE_IMU_1/2` 即出 IMU（§F）。
+- ~~左 Joy-Con 按键掩码 / 摇杆偏移~~（2026-09-28 真机）：十键掩码 + `data[10:13]` 摇杆槽 + accel/gyro 偏移全部与 [FR-PY] 假设一致（§E、J9）。
 
 仍待真机：
-1. 左 Joy-Con 按键掩码 / 摇杆偏移单独复核（J9）。
-2. 陀螺高速旋转（>245 dps）是否 wrap / 多档 FS（§D.4）。
-3. Magnetometer：抓取中恒 0，是否需单独使能 + 单位/比例（§D.4）。
-4. Temperature：`0x2E` 读负值 garbage，实际字段位置 / 比例（§H）。
-5. Battery current、analog trigger 字段确认（idle 全 0）。
-6. 出厂标定块位置（§D.5）——暂continue 用静置标定。
+1. 陀螺高速旋转（>245 dps）是否 wrap / 多档 FS（§D.4）。
+2. Magnetometer：抓取中恒 0，是否需单独使能 + 单位/比例（§D.4）。
+3. Temperature：`0x2E` 读负值 garbage，实际字段位置 / 比例（§H）。
+4. Battery current、analog trigger 字段确认（idle 全 0）。
+5. 出厂标定块位置（§D.5）——暂continue 用静置标定。
 7. 延迟分位数 p50/p95（J11）。
 8. 采样率是否平台相关：换 Linux/Windows/dongle 是否 > 33.5 Hz（§D.2）。
 9. 重连 backoff 完整序列复核（J10）。

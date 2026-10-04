@@ -78,10 +78,19 @@ Mock IMU（15.7 rad/s）仍轻松越过新阈值，`gestures.test.js` 用硬编�
 → **§3 表的 `gyro.z + → SLASH_RIGHT` 对右 Joy-Con 成立，z 轴不用翻符号。**
 
 **仍待逐个做透**：
-- `SLASH_LEFT / UP / DOWN`：回挥（backhand）转速常掉到 1.5 以下 → 落回 `THRUST`；且左向比右向弱（用户手部力学）。是力度一致性 + 各轴符号的逐一复核，机制同 `SLASH_RIGHT`。
-- 用户天然动作是**整臂平移**（高线加速度、低转速）——那是 `THRUST`。要 `SLASH_*` 必须**转手柄**。产品上可考虑「低转速时按线加速度方向判 SLASH」，是引擎设计改动，超出 bring-up 范围。
-- `thrustAccel = 2.0 g` 提高会撞到 Mock THRUST 的 `peak 3.2 g`，硬件调参与 Mock 需解耦。
+- `SLASH_UP`：本轮（见 §3.2）已在左 Joy-Con 上出现，`LEFT/RIGHT/DOWN` 同样确认，方向轴符号暂不需要翻。
+- `thrustAccel = 2.0 g` 提高会撞到 Mock THRUST 的 `peak 3.2 g`（现已提到 `peak 6.0` 留出余量，见 §3.2），硬件调参与 Mock 需解耦。
 - 采样率 33.5 Hz 下一次快挥仅 ~12–14 帧（`windowSpan 0.35s`），峰值捕捉实测够用。
+
+### 3.2 真机标定（2026-09-28，左 Joy-Con 2，自然/连贯动作）
+
+上一轮（§3.1）的预判命中了：回挥转速常掉到 `enterSpeed` 以下落回 `THRUST`。本轮左手柄真机测试彻底查清楚，是**两个独立问题叠加**，都已修复：
+
+1. **THRUST 判定时机太早**：线加速度比转速先冲高——挥击起手 1-2 帧内 `accelMag` 已 >2g，但滑动窗口内的转速峰值还没爬上来，`THRUST` 当场判定；再过 2-4 帧转速才真正越过 `enterSpeed`，证明其实是一次挥砍。修法：`THRUST` 判定前要求"低转速+高加速度"这个条件**连续保持 N 帧**才下结论（`thrustHoldFrames`，新参数），给转速时间爬升；先试 3 帧不够、调到 4 帧修好了大部分。
+2. **真正的根因——阈值本身对不上自然动作**：让用户"自然地""连贯地"挥（不是单次拼尽全力的孤立挥砍）之后，实测挥砍峰值转速普遍只有 **1.2–1.5 rad/s**——低于 §3.1 用**单次孤立右手用力挥砍**标定出的 `enterSpeed=1.5`。连贯/自然动作力度分散在整个组合动作里，峰值天然比孤立全力一击低，不管 `thrustHoldFrames` 等多久都够不到 1.5。**把 `enterSpeed` 从 1.5 降到 1.1**（仍留出高于"轻晃 0.9"的余量）后，左手柄自然连贯挥动 11/12 次正确判为 `SLASH_*`，只 1 次残留误判 `THRUST`。
+3. **连贯反向动作会丢一半**（用户提出）：人的自然动作里"挥上接挥下""挥左接挥右"是一口气完成的，转速幅值不会真正掉回 `exitSpeed` 以下——原来的峰值追踪只记录**单个**最大值，第二段动作永远拿不到自己的手势（要么被合并进第一段的峰值，要么第一段直接丢失）。修法：`inSwing` 期间如果峰值主轴**同轴反号**且新方向幅值也过 `enterSpeed`，视为一次动作的自然分界——先对前半段收尾发一个事件，再从当前帧开始追踪后半段。合成数据验证：连贯"挥上接挥下"正确拆成 `SLASH_UP` + `SLASH_DOWN` 两个事件（左右同理）。
+
+**结论**：`enterSpeed 1.5→1.1`、新增 `thrustHoldFrames`（默认 4）、新增峰值同轴反号分段逻辑，均已写入 `gestures.js` 默认值/`update()`；`web/test/gestures.test.js` 沿用现有断言全过，`mock-imu-provider.js` 的合成 THRUST 峰值从 3.2 提到 6.0 g 以确保示例数据仍能稳定越过新的连续帧要求。**残留已知限制**：约 1/12 的连贯挥动仍可能误判 `THRUST`（真实人手动作有噪声，阈值调参不可能做到 100%；继续加大 `thrustHoldFrames` 收益递减且会拖慢真正 THRUST 的响应，暂不继续深抠）。
 
 ---
 
@@ -90,19 +99,19 @@ Mock IMU（15.7 rad/s）仍轻松越过新阈值，`gestures.test.js` 用硬编�
 状态机：`idle → inSwing → idle`。
 
 1. 每帧算 `speed = |ω|`（低通后）。
-2. `speed > enterSpeed`(默认 6 rad/s) 且距上次发射 > `refractory`(0.28s) → 进入 `inSwing`，记录峰值向量。
-3. `inSwing` 期间持续更新峰值。
-4. `speed < exitSpeed`(3 rad/s) → 结束挥动：
+2. `speed > enterSpeed`(默认 1.1 rad/s) 且距上次发射 > `refractory`(0.28s) → 进入 `inSwing`，记录峰值向量。
+3. `inSwing` 期间：若当前帧在峰值的**主导轴上同轴反号**且新方向幅值也过 `enterSpeed`（自然的连贯反向动作，如挥上接挥下），先对已追踪的峰值收尾发一个事件，再从当前帧开始追踪新的一段（§3.2）；否则正常持续更新峰值。
+4. `speed < exitSpeed`(0.6 rad/s) → 结束挥动：
    - 先判 `SHAKE`（窗口内主轴符号变化 ≥ 3 次且幅度足够）。
    - 否则按峰值向量**绝对值最大的轴**决定方向（见 §3）。
-5. `THRUST` 是并行分支：`|linAccelHP| > thrustAccel`(2 g) 且 `speed < enterSpeed`。
+5. `THRUST` 是并行分支：`|linAccelHP| > thrustAccel`(2 g) 且**滑动窗口内转速峰值** < `enterSpeed`，且这个条件连续成立 `thrustHoldFrames`(默认 4) 帧才下结论（§3.2，避免线加速度比转速先冲高导致的抢跑误判）。
 6. 每个 `GestureEvent`：
    ```json
    { "gesture":"SLASH_RIGHT", "strength":0.82, "speed":11.5, "direction":[x,y,z], "timestamp":..., "controller":"left" }
    ```
-   `strength = clamp(speed / fullSpeed, 0, 1)`，`fullSpeed` 默认 14 rad/s。`direction` 为峰值向量的单位向量。
+   `strength = clamp(speed / fullSpeed, 0, 1)`，`fullSpeed` 默认 2.6 rad/s。`direction` 为峰值向量的单位向量。
 
-**参数**（构造时可调，见 `gestures.js` 顶部）：`enterSpeed` `exitSpeed` `fullSpeed` `thrustAccel` `refractory` `windowSpan`(0.35s)。
+**参数**（构造时可调，见 `gestures.js` 顶部）：`enterSpeed` `exitSpeed` `fullSpeed` `thrustAccel` `thrustHoldFrames` `refractory` `windowSpan`(0.35s)。
 
 **验证**：[web/test/gestures.test.js](../web/test/gestures.test.js) + [web/test/motion-engine.test.js](../web/test/motion-engine.test.js) —— 四方向可稳定区分、不应期生效、事件字段完整、scripted mock 一个周期内产出全部 5 种手势。
 

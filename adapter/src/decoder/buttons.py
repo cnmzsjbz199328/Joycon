@@ -5,7 +5,9 @@ offset differs per side (see constants.BUTTON_STATE_SLICE_*).
 
 RIGHT masks verified on hardware 2026-09-06 (see docs/HARDWARE_BRINGUP.md): every
 face/shoulder/rail button toggled its listed bit exactly, and the new Joy-Con 2
-"C" button was captured at 0x000040 (byte 0x05, bit 6). LEFT still [FR-PY]-only.
+"C" button was captured at 0x000040 (byte 0x05, bit 6). LEFT masks verified on
+hardware 2026-09-28: all ten buttons (D-pad, minus, L, ZL, stick click, SL, SR)
+toggled their listed bit exactly, no changes needed.
 """
 
 from __future__ import annotations
