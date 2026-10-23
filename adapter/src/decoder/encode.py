@@ -24,6 +24,7 @@ def build_raw_packet(
     accel_g: tuple[float, float, float] = (0.0, 0.0, 1.0),
     gyro_dps: tuple[float, float, float] = (0.0, 0.0, 0.0),
     stick: tuple[float, float] = (0.0, 0.0),
+    stick_raw: tuple[int, int] | None = None,
     buttons: dict[str, bool] | None = None,
     battery_v: float = 3.9,
     temperature_c: float = 30.0,
@@ -38,8 +39,11 @@ def build_raw_packet(
     for i, v in enumerate(gyro_dps):
         _put_s16le(buf, C.OFF_GYRO + 2 * i, round(v / C.GYRO_DPS_PER_RAW))
 
-    sx = int(round(stick[0] * C.STICK_HALF_RANGE + C.STICK_CENTER)) & 0x0FFF
-    sy = int(round(stick[1] * C.STICK_HALF_RANGE + C.STICK_CENTER)) & 0x0FFF
+    if stick_raw is None:
+        sx = int(round(stick[0] * C.STICK_NOMINAL_EXTENT + C.STICK_CENTER)) & 0x0FFF
+        sy = int(round(stick[1] * C.STICK_NOMINAL_EXTENT + C.STICK_CENTER)) & 0x0FFF
+    else:
+        sx, sy = stick_raw[0] & 0x0FFF, stick_raw[1] & 0x0FFF
     b0 = sx & 0xFF
     b1 = ((sx >> 8) & 0x0F) | ((sy & 0x0F) << 4)
     b2 = (sy >> 4) & 0xFF

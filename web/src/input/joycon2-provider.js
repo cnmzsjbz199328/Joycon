@@ -1,24 +1,25 @@
 // web/src/input/joycon2-provider.js
 //
-// @experimental
-// Target hardware path: connects to the native Python adapter's WebSocket bridge
-// (adapter/src/service.py) and forwards its InputFrames. The BLE reverse
-// engineering behind the adapter is UNVERIFIED on real hardware in this repo --
-// see docs/JOYCON2_PROTOCOL.md. Marked experimental until the J1-J12 checklist
-// passes on a physical Joy-Con 2.
+// Hardware path for the Motion Engine: connects to the native Python adapter's
+// WebSocket bridge (adapter/src/service.py) and forwards ONE controller's
+// InputFrames. The BLE link is verified on hardware (docs/HARDWARE_BRINGUP.md
+// §5); the "experimental" tag stays until the remaining J-checklist items pass.
+//
+// Protocol v2: the adapter can stream a left and a right Joy-Con on one socket,
+// with a status per controller. This provider follows `opts.controller`
+// ("left" | "right"), or -- by default -- the first controller that comes
+// online, and reports "connected" only while THAT controller is online (an
+// open WebSocket alone is "connecting"). Buttons/sticks for other projects:
+// use shared/protocol/input-client.mjs instead of this provider.
 
 import { InputProvider } from "./provider.js";
-import {
-  WS_DEFAULT_URL,
-  PROTOCOL_VERSION,
-  parseEnvelope,
-  isInputFrame,
-} from "../../../shared/protocol/contracts.mjs";
+import { WS_DEFAULT_URL, PROTOCOL_VERSION } from "../../../shared/protocol/contracts.mjs";
 
 export class JoyCon2Provider extends InputProvider {
   constructor(opts = {}) {
     super("joycon2", opts);
     this.url = opts.url ?? WS_DEFAULT_URL;
+    this.want = opts.controller ?? null; // null = lock onto the first one online
     this._ws = null;
     this._retry = 0;
     this._closedByUs = false;
@@ -33,6 +34,12 @@ export class JoyCon2Provider extends InputProvider {
     await this._open();
   }
 
+  _mine(controller) {
+    if (controller !== "left" && controller !== "right") return false;
+    if (this.want == null) this.want = controller;
+    return controller === this.want;
+  }
+
   _open() {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -42,32 +49,36 @@ export class JoyCon2Provider extends InputProvider {
 
       ws.onopen = () => {
         this._retry = 0;
-        this.connected = true;
         settled = true;
-        this._emitStatus("connected");
+        this._emitStatus("connecting", { hint: "adapter reachable — waiting for the Joy-Con 2 to come online" });
         resolve();
       };
 
       ws.onmessage = (ev) => {
-        const msg = parseEnvelope(ev.data);
-        if (!msg) return;
-        if (msg.v !== PROTOCOL_VERSION) {
-          this._emitError(`protocol v${msg.v} != v${PROTOCOL_VERSION}`);
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
           return;
         }
+        if (!msg || typeof msg.type !== "string") return;
+        if (msg.v !== PROTOCOL_VERSION) {
+          this._emitError(`adapter protocol v${msg.v} != v${PROTOCOL_VERSION} — update the adapter or the page`);
+          return;
+        }
+        const d = msg.data ?? {};
         if (msg.type === "frame") {
-          if (isInputFrame(msg.data)) {
-            this.controller = msg.data.controller;
-            this._emitFrame(msg.data);
-          }
+          if (this.connected && this._mine(d.controller)) this._emitFrame(d);
         } else if (msg.type === "status") {
-          this.calibrated = !!msg.data.calibrated;
-          if (msg.data.controller && msg.data.controller !== "unknown") {
-            this.controller = msg.data.controller;
-          }
-          this._emitStatus(msg.data.connection, { hint: msg.data.hint ?? null });
+          // lock only onto a controller that is actually online
+          if (this.want == null && d.connection !== "connected") return;
+          if (!this._mine(d.controller)) return;
+          this.controller = d.controller;
+          this.calibrated = !!d.calibrated;
+          this.connected = d.connection === "connected";
+          this._emitStatus(d.connection, { hint: d.hint ?? null });
         } else if (msg.type === "hello") {
-          this.dispatchEvent(new CustomEvent("hello", { detail: msg.data }));
+          this.dispatchEvent(new CustomEvent("hello", { detail: d }));
         }
       };
 
@@ -86,7 +97,7 @@ export class JoyCon2Provider extends InputProvider {
           this._emitStatus("stopped");
           return;
         }
-        this._emitStatus("disconnected");
+        this._emitStatus("disconnected", { hint: "adapter connection lost — retrying" });
         // browser-side reconnect with capped backoff (mirrors adapter policy intent)
         const delay = Math.min(8000, 500 * 2 ** this._retry++);
         setTimeout(() => {

@@ -65,6 +65,9 @@ export class MotionEngine extends EventTarget {
 
   /** @param {import('../../../shared/protocol/contracts.mjs')} frame  InputFrame */
   feed(frame) {
+    // Adapter still calibrating this controller's IMU (protocol v2): its bias
+    // is not removed yet, so don't integrate it or collect calibration on it.
+    if (frame.imuReady === false) return this._state;
     const t = frame.timestamp;
     let dt = this._lastT == null ? 1 / 62 : t - this._lastT;
     if (!(dt > 0) || dt > 0.25) dt = 1 / 62; // guard against gaps / bad clocks

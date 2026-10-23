@@ -9,7 +9,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-PROTOCOL_VERSION = 1
+# v2 (2026-10-24): per-controller status (left and right on one socket),
+# "connected" means the controller is online, stickRaw/imuReady added, full
+# button set. See shared/protocol/README.md section 0.
+PROTOCOL_VERSION = 2
 WS_DEFAULT_HOST = "127.0.0.1"
 WS_DEFAULT_PORT = 8765
 
@@ -38,6 +41,8 @@ class InputFrame:
     battery_v: float | None = None
     battery_ma: float | None = None
     temperature_c: float | None = None
+    stick_raw: tuple[int, int] | None = None
+    imu_ready: bool = True
 
     def to_message(self) -> dict[str, Any]:
         gx, gy, gz = self.gyro_dps
@@ -47,7 +52,11 @@ class InputFrame:
             "seq": self.seq,
             "controller": self.controller,
             "buttons": self.buttons,
-            "stick": {"x": self.stick[0], "y": self.stick[1]},
+            "stick": {"x": round(self.stick[0], 4), "y": round(self.stick[1], 4)},
+            "stickRaw": (
+                None if self.stick_raw is None
+                else {"x": self.stick_raw[0], "y": self.stick_raw[1]}
+            ),
             "accelerometer": {"x": ax, "y": ay, "z": az},
             # contract: gyroscope is rad/s on the wire (ADR-4)
             "gyroscope": {"x": gx * _DEG2RAD, "y": gy * _DEG2RAD, "z": gz * _DEG2RAD},
@@ -57,6 +66,7 @@ class InputFrame:
                 else {"voltage": self.battery_v, "current": self.battery_ma}
             ),
             "temperature": self.temperature_c,
+            "imuReady": self.imu_ready,
         }
 
 
@@ -76,10 +86,14 @@ class HelloData:
 
 @dataclass
 class StatusData:
+    """One controller's state. `connection == "connected"` means that controller
+    is online and its frames are flowing -- not merely that the WebSocket is up."""
+
     connection: str
     calibrated: bool
     controller: str = "unknown"
     hint: str | None = None
+    address: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -87,4 +101,5 @@ class StatusData:
             "controller": self.controller,
             "calibrated": self.calibrated,
             "hint": self.hint,
+            "address": self.address,
         }

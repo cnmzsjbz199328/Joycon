@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Input Test — Joy-Con 2</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row spread">
+        <div>
+          <h1>Input Test</h1>
+          <div class="muted">Every button and stick of both Joy-Con 2, read through the adapter's public WebSocket interface</div>
+        </div>
+        <div class="links"><a href="./index.html">← Launcher</a><a href="./playground.html">Playground</a></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <div class="row spread" style="flex-wrap:wrap">
+          <span class="pill"><span class="dot" id="ws-dot"></span>Adapter <b id="ws-state">closed</b> <span class="muted mono" id="ws-url"></span></span>
+          <span class="pill muted" id="ws-hello">—</span>
+        </div>
+        <div class="hint" id="ws-error"></div>
+      </div>
+
+      <div class="it-devices" style="margin-top:16px">
+        <div class="panel it-dev" id="dev-left"></div>
+        <div class="panel it-dev" id="dev-right"></div>
+      </div>
+
+      <div class="it-lower" style="margin-top:16px">
+        <div class="panel" id="checklist">
+          <div class="row spread">
+            <h2 style="margin:0">Guided acceptance run</h2>
+            <span class="pill mono" id="cl-progress">—</span>
+          </div>
+          <div class="it-step">
+            <div class="muted" id="cl-section">Press Start when both controllers show Online.</div>
+            <div class="it-step-title" id="cl-title">—</div>
+            <div class="muted" id="cl-detail"></div>
+            <div class="it-step-state" id="cl-state"></div>
+          </div>
+          <div class="row" style="flex-wrap:wrap">
+            <button class="primary" id="cl-start">Start</button>
+            <button id="cl-back" disabled>Back</button>
+            <button id="cl-retry" disabled>Retry</button>
+            <button id="cl-skip" disabled>Skip</button>
+            <button id="cl-report">Download report</button>
+          </div>
+          <ol class="it-results mono" id="cl-results"></ol>
+        </div>
+
+        <div class="panel">
+          <div class="row spread">
+            <h2 style="margin:0">Events</h2>
+            <button id="log-clear">Clear</button>
+          </div>
+          <ol class="it-log mono" id="log"></ol>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/input-test/main.js"></script>
+  </body>
+</html>

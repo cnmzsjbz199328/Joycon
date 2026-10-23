@@ -37,6 +37,23 @@ def enable_imu_sequence() -> tuple[bytes, bytes]:
     return C.ENABLE_IMU_1, C.ENABLE_IMU_2
 
 
+def read_flash(address: int, length: int) -> bytes:
+    """[ND] commands.md 0x02/0x04 "Memory Read" (max 0x4F bytes over BLE).
+
+    The reply arrives on COMMAND_RESPONSE_UUID as an 8-byte header, then
+    length|00 00 00|address u32 LE, then the data (see parse_flash_read)."""
+    payload = bytes([length & 0xFF, 0x7E, 0x00, 0x00]) + address.to_bytes(4, "little")
+    return build_command(C.COMMAND_FLASH, C.SUBCOMMAND_FLASH_READ, payload)
+
+
+def parse_flash_read(resp: bytes, address: int) -> bytes | None:
+    """Data bytes of a read_flash() reply for `address`, or None if it is another reply."""
+    if (len(resp) < 16 or resp[0] != C.COMMAND_FLASH or resp[3] != C.SUBCOMMAND_FLASH_READ
+            or int.from_bytes(resp[12:16], "little") != address):
+        return None
+    return resp[16:16 + resp[8]]
+
+
 def play_vibration_preset(preset_id: int) -> bytes:
     # Not a deliverable (GOAL non-goal); kept for completeness / future rumble.
     return build_command(

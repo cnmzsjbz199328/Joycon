@@ -5,10 +5,11 @@ Sources (see docs/JOYCON2_PROTOCOL.md for full attribution):
   [FR-CPP] TheFrano/joycon2cpp
   [MIS]    Misaka10571/joycon2-connector
   [EIMU]   matiaspalmac/everything-imu  -- 62 Hz sampling, hardware-validated
+  [ND]     ndeadly/switch2_controller_research -- hid_reports.md,
+           bluetooth_interface.md, commands.md, memory_layout.md
 
-STATUS: EXPERIMENTAL -- not verified on real hardware in this environment.
-Offsets marked "unverified" in the protocol doc are cross-checked at runtime
-by adapter/src/bluetooth/prototype.py against a real Joy-Con 2.
+STATUS: core link verified on real hardware (macOS, both sides). Per-field
+status is in the comments below and in docs/JOYCON2_PROTOCOL.md section J.
 """
 
 from __future__ import annotations
@@ -25,14 +26,38 @@ WRITE_COMMAND_UUID = "649d4ac9-8eb7-4e6c-af44-1ea54fe5f005"  # Write
 # Service UUID: verified on hardware 2026-09-06 (macOS, both Joy-Con 2 units) --
 # both characteristics above live under this proprietary primary service.
 INPUT_SERVICE_UUID = "ab7de9be-89fe-49ad-828f-118f09df7fd0"
+# Command responses arrive here ([ND] bluetooth_interface.md, "Command Response #1";
+# Joy2Win controller_command.py uses the same UUID). Only used for the
+# best-effort factory stick-calibration read.
+COMMAND_RESPONSE_UUID = "c765a961-d9d8-4d36-a20a-5315b111836a"
+
+# Side-specific characteristics ([ND] bluetooth_interface.md, handle 0x000E):
+# only a LEFT unit exposes the first, only a RIGHT unit the second. Used to
+# confirm the side after connecting when the advertisement did not say.
+SIDE_CHAR_LEFT = "cc1bbbb5-7354-4d32-a716-a81cb241a32a"
+SIDE_CHAR_RIGHT = "d5a9e01e-2ffc-4cca-b20c-8b67142bf442"
+
+# Advertisement product id ([ND] bluetooth_interface.md manufacturer data
+# offset 0x7, i.e. index 5..6 of bleak's manufacturer_data payload, LE;
+# ids from [ND] descriptors.md).
+ADV_PRODUCT_ID_SLICE = slice(5, 7)
+PRODUCT_ID_RIGHT = 0x2066
+PRODUCT_ID_LEFT = 0x2067
 
 # --- Command / subcommand ids ---------------------------------------------  [FR-PY]
+COMMAND_FLASH = 0x02  # [ND] commands.md "Flash Memory"
 COMMAND_LEDS = 0x09
 COMMAND_VIBRATION = 0x0A
 COMMAND_CONFIG = 0x0C  # inferred: config/IMU domain (first byte of ENABLE_IMU_*)
 
 SUBCOMMAND_SET_PLAYER_LEDS = 0x07
 SUBCOMMAND_PLAY_VIBRATION_PRESET = 0x02
+SUBCOMMAND_FLASH_READ = 0x04  # [ND] "Memory Read": payload len|0x7E|00 00|addr u32 LE
+
+# Flash addresses ([ND] memory_layout.md). The console reads both while
+# connecting a Joy-Con 2 ([ND] bluetooth_interface.md connection log).
+FLASH_FACTORY_STICK_CAL = 0x130A8   # 9 bytes, "Primary analog stick calibration"
+FLASH_USER_STICK_CAL = 0x1FC040     # 11 bytes, all 0xFF unless user-calibrated
 
 # Two raw 12-byte writes to WRITE_COMMAND_UUID, ~0.5s apart, enable the IMU.  [FR-PY]
 ENABLE_IMU_1 = bytes([0x0C, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0x2F, 0x00, 0x00, 0x00])
@@ -80,6 +105,7 @@ BUTTON_STATE_SLICE_RIGHT = slice(3, 6)
 # note this differs from the layout table (0x08 / 0x0B) by ~2 bytes.
 # HW-VERIFIED: right 2026-09-06 (centers ~2047/2047, full deflection ~900..3300);
 # left 2026-09-28 (centers near 0, direction-correct on all 4 pushes, not garbage).
+# [ND] hid_reports.md agrees: left stick 0x0A, right stick 0x0D, "uncalibrated".
 STICK_SLICE_LEFT = slice(10, 13)
 STICK_SLICE_RIGHT = slice(13, 16)
 
@@ -89,8 +115,15 @@ GYRO_RAW_PER_360DPS = 48000.0      # raw * 360 / 48000 -> deg/s
 GYRO_DPS_PER_RAW = 360.0 / GYRO_RAW_PER_360DPS
 GYRO_RADPS_PER_RAW = GYRO_DPS_PER_RAW * math.pi / 180.0
 
-STICK_CENTER = 2048.0              # 12-bit, 0..4095
-STICK_HALF_RANGE = 2048.0
+# Sticks are 12-bit (0..4095) but the physical gate only travels about
+# +-1150..1250 counts from centre (HW 2026-09-06 right unit 900..3300), which is
+# why the old "(raw - 2048) / 2048" never got past +-0.6. See
+# calibration/stick.py for the per-controller normaliser built on these.
+STICK_CENTER = 2048.0              # nominal centre; real rest point differs per unit
+STICK_NOMINAL_EXTENT = 1100.0      # counts from centre treated as full deflection until a bigger push is seen
+STICK_MAX_EXTENT = 1900.0          # sanity cap for the learned extent
+STICK_CENTER_BAND = 300.0          # a rest centre is only accepted this close to 2048
+STICK_DEADZONE = 0.08              # radial, in normalised units
 
 BATTERY_MV_PER_V = 1000.0
 BATTERY_RAW_PER_MA = 100.0

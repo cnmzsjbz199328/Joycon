@@ -2,6 +2,10 @@
 
 Contract: shared/protocol (envelope + InputFrame). One BLE notification maps to
 exactly one `frame` message -- no batching, no downsampling (GOAL.md §9).
+
+Status is per controller: the last status of every controller is replayed to a
+client when it connects, so a late joiner knows which Joy-Con is online.
+Inbound messages are ignored except diagnostic `mark`s, handed to `on_message`.
 """
 
 from __future__ import annotations
@@ -11,12 +15,15 @@ import json
 import logging
 from typing import Any
 
+from collections.abc import Callable
+
 import websockets
 from websockets.asyncio.server import ServerConnection, serve
 
 from shared.protocol.frame import (
     WS_DEFAULT_HOST,
     WS_DEFAULT_PORT,
+    PROTOCOL_VERSION,
     HelloData,
     StatusData,
     envelope,
@@ -26,13 +33,15 @@ log = logging.getLogger("adapter.ws")
 
 
 class BroadcastServer:
-    def __init__(self, host: str = WS_DEFAULT_HOST, port: int = WS_DEFAULT_PORT):
+    def __init__(self, host: str = WS_DEFAULT_HOST, port: int = WS_DEFAULT_PORT,
+                 on_message: Callable[[dict[str, Any]], None] | None = None):
         self.host = host
         self.port = port
+        self.on_message = on_message
         self._clients: set[ServerConnection] = set()
         self._server: Any = None
         self._hello: dict[str, Any] | None = None
-        self._last_status: dict[str, Any] | None = None
+        self._last_status: dict[str, dict[str, Any]] = {}  # controller -> envelope
         self._sent = 0
 
     @property
@@ -61,15 +70,24 @@ class BroadcastServer:
         try:
             if self._hello is not None:
                 await ws.send(json.dumps(self._hello))
-            if self._last_status is not None:
-                await ws.send(json.dumps(self._last_status))
-            async for _ in ws:  # clients are receive-only; ignore inbound
-                pass
+            for status in list(self._last_status.values()):
+                await ws.send(json.dumps(status))
+            async for text in ws:
+                self._inbound(text)
         except websockets.ConnectionClosed:
             pass
         finally:
             self._clients.discard(ws)
             log.info("client disconnected (%d total)", len(self._clients))
+
+    def _inbound(self, text: str | bytes) -> None:
+        try:
+            msg = json.loads(text)
+        except ValueError:
+            return
+        if (isinstance(msg, dict) and msg.get("v") == PROTOCOL_VERSION and msg.get("type") == "mark"
+                and isinstance(msg.get("data"), dict) and self.on_message is not None):
+            self.on_message(msg)
 
     async def _broadcast(self, payload: str) -> None:
         if not self._clients:
@@ -88,5 +106,6 @@ class BroadcastServer:
         await self._broadcast(json.dumps(envelope("frame", frame_msg)))
 
     async def send_status(self, status: StatusData) -> None:
-        self._last_status = envelope("status", status.as_dict())
-        await self._broadcast(json.dumps(self._last_status))
+        msg = envelope("status", status.as_dict())
+        self._last_status[status.controller] = msg
+        await self._broadcast(json.dumps(msg))

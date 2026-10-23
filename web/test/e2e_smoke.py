@@ -1,16 +1,30 @@
-"""Headless smoke test for the three web pages, driven by the Mock IMU provider.
+"""Headless smoke test for the web pages (no hardware).
 
-Asserts (no hardware):
+Asserts:
   - no console errors / page errors
-  - Playground: provider connects, a gesture fires, motionSpeed peaks > 0.4,
-    controller shows LEFT, 3D sword canvas renders non-blank
-  - Fruit Slash: score and slice count increase while the scripted mock slashes
+  - Playground (Mock IMU): provider connects, a gesture fires, motionSpeed peaks
+    > 0.4, controller shows LEFT, 3D sword canvas renders non-blank
+  - Fruit Slash (Mock IMU): score and slice count increase while the scripted mock slashes
+  - Input Test (real adapter, --source synthetic --side both, spawned here):
+    both controllers online, press/release events from both sides, and killing
+    the adapter while a button is held releases it ("transport"); restarting
+    the adapter brings both back
 """
 
+import os
+import socket
+import subprocess
 import sys
+import tempfile
+import time
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
 BASE = "http://localhost:5173"
+OUT = Path(os.environ.get("E2E_OUT", tempfile.gettempdir()))
+ROOT = Path(__file__).resolve().parents[2]
+ADAPTER_PORT = 8798
 FAILS: list[str] = []
 
 
@@ -84,7 +98,7 @@ def run(p):
         }"""
     )
     check(sword_px > 500, f"playground: 3D sword canvas rendered (nonzero px={sword_px})")
-    pg.screenshot(path="/private/tmp/claude-501/-Users-tangjiang-Public-Joycon/67fab509-9d15-402c-9f9b-b31e73bfb59d/scratchpad/playground.png", full_page=True)
+    pg.screenshot(path=str(OUT / "playground.png"), full_page=True)
 
     # ---------------- Fruit Slash ----------------
     gm = browser.new_page(viewport={"width": 1280, "height": 900})
@@ -98,9 +112,65 @@ def run(p):
     slices = int(gm.inner_text("#slices"))
     check(slices > 0, f"game: slices registered ({slices})")
     check(score > 0, f"game: score increased ({score})")
-    gm.screenshot(path="/private/tmp/claude-501/-Users-tangjiang-Public-Joycon/67fab509-9d15-402c-9f9b-b31e73bfb59d/scratchpad/game.png", full_page=True)
+    gm.screenshot(path=str(OUT / "game.png"), full_page=True)
 
+    run_input_page(browser)
     browser.close()
+
+
+def start_adapter():
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "adapter.src.service", "--source", "synthetic", "--side", "both",
+         "--port", str(ADAPTER_PORT)],
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    for _ in range(100):
+        try:
+            socket.create_connection(("127.0.0.1", ADAPTER_PORT), timeout=0.2).close()
+            return proc
+        except OSError:
+            time.sleep(0.1)
+    proc.kill()
+    raise RuntimeError("adapter did not start")
+
+
+def run_input_page(browser):
+    adapter = start_adapter()
+    try:
+        ip = browser.new_page(viewport={"width": 1280, "height": 1300})
+        wire_console(ip, "input")
+        ip.goto(f"{BASE}/input.html?ws=ws://127.0.0.1:{ADAPTER_PORT}")
+        ip.wait_for_function(
+            "globalThis.__jc?.device('left').online && globalThis.__jc?.device('right').online", timeout=8000)
+        check(True, "input: left and right online")
+        ip.wait_for_timeout(2500)  # synthetic button walk: one button per side per second
+        log = ip.eval_on_selector_all("#log li", "els => els.map(e => e.textContent)")
+        check(any("left  \u25bc" in t for t in log) and any("right \u25bc" in t for t in log),
+              "input: press events from both controllers")
+        check(any("\u25b2" in t for t in log), "input: release events")
+
+        ip.wait_for_function(
+            "Object.values(globalThis.__jc.devices).some(d => Object.values(d.buttons).some(Boolean))", timeout=3000)
+        adapter.kill()
+        adapter.wait()
+        ip.wait_for_function("globalThis.__jc.adapter.transport !== 'open'", timeout=5000)
+        state = ip.evaluate("""() => ({
+          pressed: Object.values(globalThis.__jc.devices).flatMap(d => Object.entries(d.buttons).filter(([,v]) => v)),
+          online: Object.values(globalThis.__jc.devices).map(d => d.online),
+          lit: document.querySelectorAll('.it-btn.on').length,
+          log: [...document.querySelectorAll('#log li')].map(e => e.textContent).slice(0, 8),
+        })""")
+        check(state["pressed"] == [] and state["lit"] == 0, f"input: adapter killed mid-hold -> nothing stays pressed ({state['pressed']})")
+        check(not any(state["online"]), "input: both controllers offline after adapter loss")
+        check(any("(transport)" in t for t in state["log"]), "input: release logged with reason 'transport'")
+
+        adapter = start_adapter()
+        ip.wait_for_function(
+            "globalThis.__jc.device('left').online && globalThis.__jc.device('right').online", timeout=15000)
+        check(True, "input: both back online after adapter restart")
+        ip.screenshot(path=str(OUT / "input.png"), full_page=True)
+    finally:
+        adapter.kill()
 
 
 with sync_playwright() as p:

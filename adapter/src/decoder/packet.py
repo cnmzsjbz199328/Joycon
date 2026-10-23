@@ -5,9 +5,12 @@ All offsets / scales are from docs/JOYCON2_PROTOCOL.md (source [FR-PY], layout b
 adapter only forwards the ones we're confident about.
 
 Units out of this module:
-  accel  -> g       (raw / 4096)
-  gyro   -> deg/s   (raw * 360 / 48000)
-  stick  -> [-1, 1] (12-bit, centered at 2048; NO extra gain/deadzone here)
+  accel     -> g       (raw / 4096)
+  gyro      -> deg/s   (raw * 360 / 48000)
+  stick_raw -> (x, y)  12-bit counts, 0..4095, exactly as reported
+  stick     -> [-1, 1] stateless nominal scaling (centre 2048, STICK_NOMINAL_EXTENT),
+               no dead zone. The adapter replaces it with the per-controller
+               calibration.stick.StickNormalizer output before broadcasting.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ class DecodedPacket:
     side: str
     buttons: dict[str, bool]
     stick: tuple[float, float]
+    stick_raw: tuple[int, int]
     accel_g: Vec3
     gyro_dps: Vec3
     battery_v: float | None
@@ -54,15 +58,24 @@ def _u16le(data: bytes, off: int) -> int:
     return int.from_bytes(data[off:off + 2], "little", signed=False)
 
 
-def decode_stick(three_bytes: bytes) -> tuple[float, float]:
+def decode_stick_raw(three_bytes: bytes) -> tuple[int, int]:
+    """Two 12-bit values packed little-endian into 3 bytes ([FR-PY] decode_joystick)."""
     if len(three_bytes) != 3:
-        return 0.0, 0.0
+        return int(C.STICK_CENTER), int(C.STICK_CENTER)
     b0, b1, b2 = three_bytes[0], three_bytes[1], three_bytes[2]
     x = ((b1 & 0x0F) << 8) | b0
     y = (b2 << 4) | ((b1 & 0xF0) >> 4)
-    nx = (x - C.STICK_CENTER) / C.STICK_HALF_RANGE
-    ny = (y - C.STICK_CENTER) / C.STICK_HALF_RANGE
+    return x, y
+
+
+def nominal_stick(raw: tuple[int, int]) -> tuple[float, float]:
+    nx = (raw[0] - C.STICK_CENTER) / C.STICK_NOMINAL_EXTENT
+    ny = (raw[1] - C.STICK_CENTER) / C.STICK_NOMINAL_EXTENT
     return max(-1.0, min(1.0, nx)), max(-1.0, min(1.0, ny))
+
+
+def decode_stick(three_bytes: bytes) -> tuple[float, float]:
+    return nominal_stick(decode_stick_raw(three_bytes))
 
 
 def decode_accel(data: bytes) -> Vec3:
@@ -93,7 +106,7 @@ def decode_packet(data: bytes, side: str) -> DecodedPacket:
     buttons = decode_buttons(state, side)
 
     stk_slice = C.STICK_SLICE_LEFT if side == "left" else C.STICK_SLICE_RIGHT
-    stick = decode_stick(data[stk_slice])
+    stick_raw = decode_stick_raw(data[stk_slice])
 
     batt_v = _u16le(data, C.OFF_BATTERY_VOLTAGE) / C.BATTERY_MV_PER_V
     batt_ma = _s16le(data, C.OFF_BATTERY_CURRENT) / C.BATTERY_RAW_PER_MA
@@ -103,7 +116,8 @@ def decode_packet(data: bytes, side: str) -> DecodedPacket:
         seq=seq,
         side=side,
         buttons=buttons,
-        stick=stick,
+        stick=nominal_stick(stick_raw),
+        stick_raw=stick_raw,
         accel_g=decode_accel(data),
         gyro_dps=decode_gyro(data),
         battery_v=batt_v if batt_v > 0 else None,

@@ -1,7 +1,9 @@
 """BLE scan + side detection for Joy-Con 2.
 
 Identifies Switch 2 controllers by manufacturer id 1363 and the 01 00 03 7E
-manufacturer-data prefix ([FR-PY] main.py).
+manufacturer-data prefix ([FR-PY] main.py). Side comes from the advertised
+product id ([ND] bluetooth_interface.md: 0x2067 = L, 0x2066 = R), falling back
+to the advertised name ("Joy-Con 2 (L)"), which macOS sometimes leaves empty.
 """
 
 from __future__ import annotations
@@ -13,7 +15,13 @@ from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from ..protocol.constants import MANUFACTURER_ID, MANUFACTURER_PREFIX
+from ..protocol.constants import (
+    ADV_PRODUCT_ID_SLICE,
+    MANUFACTURER_ID,
+    MANUFACTURER_PREFIX,
+    PRODUCT_ID_LEFT,
+    PRODUCT_ID_RIGHT,
+)
 
 
 class BluetoothUnavailable(RuntimeError):
@@ -26,15 +34,32 @@ class FoundController:
     name: str
     address: str
     side: str  # "left" | "right" | "unknown"
+    side_source: str = "none"  # "product-id" | "name" | "none"
+    manufacturer_data: bytes = b""
 
 
-def _detect_side(name: str | None) -> str:
+def _side_from_name(name: str | None) -> str:
     n = (name or "").lower()
     if "(l)" in n or "left" in n:
         return "left"
     if "(r)" in n or "right" in n:
         return "right"
     return "unknown"
+
+
+def _side_from_manufacturer_data(data: bytes | None) -> str:
+    if not data or len(data) < ADV_PRODUCT_ID_SLICE.stop:
+        return "unknown"
+    pid = int.from_bytes(data[ADV_PRODUCT_ID_SLICE], "little")
+    return {PRODUCT_ID_LEFT: "left", PRODUCT_ID_RIGHT: "right"}.get(pid, "unknown")
+
+
+def detect_side(name: str | None, manufacturer_data: bytes | None) -> tuple[str, str]:
+    side = _side_from_manufacturer_data(manufacturer_data)
+    if side != "unknown":
+        return side, "product-id"
+    side = _side_from_name(name)
+    return side, ("name" if side != "unknown" else "none")
 
 
 def _is_joycon2(adv: AdvertisementData) -> bool:
@@ -62,8 +87,11 @@ async def scan_for_controllers(
         if not _is_joycon2(adv):
             return
         name = device.name or adv.local_name or "Joy-Con 2"
+        mdata = bytes(adv.manufacturer_data.get(MANUFACTURER_ID, b""))
+        side, source = detect_side(device.name or adv.local_name, mdata)
         found[device.address] = FoundController(
-            device=device, name=name, address=device.address, side=_detect_side(name)
+            device=device, name=name, address=device.address, side=side,
+            side_source=source, manufacturer_data=mdata,
         )
         if len(found) >= want:
             done.set()

@@ -23,6 +23,10 @@
           <b>Motion Fruit Slash →</b>
           The first full motion demo. Swing to slice fruit, avoid bombs. No game over.
         </a>
+        <a class="card" href="./input.html">
+          <b>Input Test →</b>
+          Every button and both sticks of the left and right Joy-Con 2, press/release log, guided acceptance run.
+        </a>
       </div>
 
       <div class="panel" style="margin-top:20px">
@@ -35,8 +39,9 @@
           <li>Play.</li>
         </ol>
         <p class="hint">
-          The Joy-Con 2 BLE path is <b>EXPERIMENTAL</b> — implemented from community reverse-engineering,
-          not verified on hardware here. See <span class="mono">docs/JOYCON2_PROTOCOL.md</span>.
+          The Joy-Con 2 BLE link (left + right) is verified on hardware on macOS; per-item status is in
+          <span class="mono">docs/JOYCON2_PROTOCOL.md</span> §J. Buttons and sticks work as soon as a controller
+          is connected — the IMU calibration only matters for motion.
         </p>
       </div>
     </div>

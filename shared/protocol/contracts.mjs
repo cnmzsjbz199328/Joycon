@@ -2,7 +2,9 @@
 // Single source of truth for the browser side. Mirrors schema.json / frame.py.
 // No build step: plain ES module, importable from web/ and from tests.
 
-export const PROTOCOL_VERSION = 1;
+// v2 (2026-10-24): per-controller status, "connected" = controller online,
+// stickRaw / imuReady, full button set. See README.md section 0.
+export const PROTOCOL_VERSION = 2;
 
 export const WS_DEFAULT_URL = "ws://127.0.0.1:8765";
 
@@ -27,13 +29,23 @@ export const CONNECTION_STATES = /** @type {const} */ ([
   "stopped",
 ]);
 
-/** Button name lists per side (mirror adapter/src/decoder/buttons.py). */
+/** Button name lists per side (mirror adapter/src/decoder/buttons.py; "stick" = stick click). */
 export const BUTTONS_LEFT = [
-  "up", "down", "left", "right", "minus", "l", "zl", "stick", "sl", "sr",
+  "up", "down", "left", "right", "l", "zl", "sl", "sr", "minus", "capture", "stick",
 ];
 export const BUTTONS_RIGHT = [
-  "a", "b", "x", "y", "plus", "r", "zr", "stick", "sl", "sr",
+  "a", "b", "x", "y", "r", "zr", "sl", "sr", "plus", "home", "c", "stick",
 ];
+
+/** @param {"left"|"right"} controller */
+export function buttonsFor(controller) {
+  return controller === "right" ? BUTTONS_RIGHT : BUTTONS_LEFT;
+}
+
+/** Every button of that side, released. */
+export function neutralButtons(controller) {
+  return Object.fromEntries(buttonsFor(controller).map((n) => [n, false]));
+}
 
 /** @returns {{v:number,type:string,data:object}|null} */
 export function parseEnvelope(text) {
@@ -83,12 +95,14 @@ export function emptyInputFrame(controller = "left") {
     timestamp: 0,
     seq: 0,
     controller,
-    buttons: {},
+    buttons: neutralButtons(controller),
     stick: { x: 0, y: 0 },
+    stickRaw: null,
     accelerometer: { x: 0, y: 0, z: 1 },
     gyroscope: { x: 0, y: 0, z: 0 },
     battery: null,
     temperature: null,
+    imuReady: true,
   };
 }
 

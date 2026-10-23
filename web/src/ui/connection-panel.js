@@ -70,7 +70,9 @@ export class ConnectionPanel {
       this._hint("");
     }
 
-    const provider = createProvider(id);
+    // ?controller=left|right picks which Joy-Con 2 drives the page when both are connected
+    const want = new URLSearchParams(location.search).get("controller");
+    const provider = createProvider(id, want === "left" || want === "right" ? { controller: want } : {});
     this.provider = provider;
     provider.addEventListener("status", (e) => this._status(e.detail));
     provider.addEventListener("error", (e) => this._hint(e.detail.message));

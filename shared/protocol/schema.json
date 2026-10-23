@@ -2,140 +2,520 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://joycon2-motion-platform/shared/protocol/schema.json",
   "title": "Joy-Con 2 Motion Platform data contracts",
-  "description": "PROTOCOL_VERSION = 1. See shared/protocol/README.md.",
+  "description": "PROTOCOL_VERSION = 2. See shared/protocol/README.md.",
   "definitions": {
     "Vec3": {
       "type": "object",
-      "required": ["x", "y", "z"],
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
       },
       "additionalProperties": false
     },
     "Envelope": {
       "type": "object",
-      "required": ["v", "type", "data"],
+      "required": [
+        "v",
+        "type",
+        "data"
+      ],
       "properties": {
-        "v": { "const": 1 },
-        "type": { "enum": ["hello", "status", "frame"] },
-        "data": { "type": "object" }
+        "v": {
+          "const": 2
+        },
+        "type": {
+          "enum": [
+            "hello",
+            "status",
+            "frame",
+            "mark"
+          ],
+          "description": "hello/status/frame: adapter -> client. mark: client -> adapter, diagnostic only (written to --record captures)."
+        },
+        "data": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     },
     "Hello": {
       "type": "object",
-      "required": ["adapter", "source", "rateHz"],
+      "required": [
+        "adapter",
+        "source",
+        "rateHz"
+      ],
       "properties": {
-        "adapter": { "type": "string" },
-        "source": { "enum": ["joycon2", "replay", "synthetic"] },
-        "rateHz": { "type": "number" }
+        "adapter": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "joycon2",
+            "replay",
+            "synthetic"
+          ]
+        },
+        "rateHz": {
+          "type": "number"
+        }
       },
       "additionalProperties": false
     },
     "Status": {
       "type": "object",
-      "required": ["connection", "calibrated"],
+      "required": [
+        "connection",
+        "calibrated"
+      ],
       "properties": {
-        "connection": { "enum": ["connecting", "connected", "disconnected", "reconnecting", "cooldown", "stopped"] },
-        "controller": { "enum": ["left", "right", "unknown"] },
-        "calibrated": { "type": "boolean" },
-        "hint": { "type": ["string", "null"] }
+        "connection": {
+          "enum": [
+            "connecting",
+            "connected",
+            "disconnected",
+            "reconnecting",
+            "cooldown",
+            "stopped"
+          ]
+        },
+        "controller": {
+          "enum": [
+            "left",
+            "right",
+            "unknown"
+          ]
+        },
+        "calibrated": {
+          "type": "boolean",
+          "description": "adapter IMU still-calibration done for this controller; buttons/sticks never wait for it"
+        },
+        "hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "BLE address of the unit (macOS: per-host UUID); diagnostic"
+        }
+      },
+      "additionalProperties": false,
+      "description": "One controller's state. connection == 'connected' means that controller is online and its frames are flowing (not just that the WebSocket is open). Sent per controller on every change; the last one per controller is replayed to new clients."
+    },
+    "ButtonsLeft": {
+      "type": "object",
+      "description": "LEFT Joy-Con 2: every button, true while held. 'stick' = stick click.",
+      "required": [
+        "up",
+        "down",
+        "left",
+        "right",
+        "l",
+        "zl",
+        "sl",
+        "sr",
+        "minus",
+        "capture",
+        "stick"
+      ],
+      "properties": {
+        "up": {
+          "type": "boolean"
+        },
+        "down": {
+          "type": "boolean"
+        },
+        "left": {
+          "type": "boolean"
+        },
+        "right": {
+          "type": "boolean"
+        },
+        "l": {
+          "type": "boolean"
+        },
+        "zl": {
+          "type": "boolean"
+        },
+        "sl": {
+          "type": "boolean"
+        },
+        "sr": {
+          "type": "boolean"
+        },
+        "minus": {
+          "type": "boolean"
+        },
+        "capture": {
+          "type": "boolean"
+        },
+        "stick": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ButtonsRight": {
+      "type": "object",
+      "description": "RIGHT Joy-Con 2: every button, true while held. 'stick' = stick click.",
+      "required": [
+        "a",
+        "b",
+        "x",
+        "y",
+        "r",
+        "zr",
+        "sl",
+        "sr",
+        "plus",
+        "home",
+        "c",
+        "stick"
+      ],
+      "properties": {
+        "a": {
+          "type": "boolean"
+        },
+        "b": {
+          "type": "boolean"
+        },
+        "x": {
+          "type": "boolean"
+        },
+        "y": {
+          "type": "boolean"
+        },
+        "r": {
+          "type": "boolean"
+        },
+        "zr": {
+          "type": "boolean"
+        },
+        "sl": {
+          "type": "boolean"
+        },
+        "sr": {
+          "type": "boolean"
+        },
+        "plus": {
+          "type": "boolean"
+        },
+        "home": {
+          "type": "boolean"
+        },
+        "c": {
+          "type": "boolean"
+        },
+        "stick": {
+          "type": "boolean"
+        }
       },
       "additionalProperties": false
     },
     "InputFrame": {
       "type": "object",
-      "required": ["timestamp", "seq", "controller", "buttons", "stick", "accelerometer", "gyroscope"],
+      "required": [
+        "timestamp",
+        "seq",
+        "controller",
+        "buttons",
+        "stick",
+        "accelerometer",
+        "gyroscope"
+      ],
       "properties": {
-        "timestamp": { "type": "number", "description": "adapter monotonic seconds at BLE receipt" },
-        "seq": { "type": "integer", "minimum": 0 },
-        "controller": { "enum": ["left", "right"] },
+        "timestamp": {
+          "type": "number",
+          "description": "adapter monotonic seconds at BLE receipt"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "controller": {
+          "enum": [
+            "left",
+            "right"
+          ]
+        },
         "buttons": {
           "type": "object",
-          "additionalProperties": { "type": "boolean" }
+          "description": "ButtonsLeft or ButtonsRight, by controller"
         },
         "stick": {
           "type": "object",
-          "required": ["x", "y"],
+          "required": [
+            "x",
+            "y"
+          ],
           "properties": {
-            "x": { "type": "number", "minimum": -1, "maximum": 1 },
-            "y": { "type": "number", "minimum": -1, "maximum": 1 }
+            "x": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "y": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "normalised: +x right, +y up, unit circle, radial dead zone applied; 0,0 at rest"
+        },
+        "stickRaw": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "diagnostic: the uncalibrated 12-bit counts the stick reported (null if the source has none)",
+          "required": [
+            "x",
+            "y"
+          ],
+          "properties": {
+            "x": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4095
+            },
+            "y": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4095
+            }
           },
           "additionalProperties": false
         },
-        "accelerometer": { "$ref": "#/definitions/Vec3", "description": "g, calibrated" },
-        "gyroscope": { "$ref": "#/definitions/Vec3", "description": "rad/s, calibrated" },
+        "accelerometer": {
+          "$ref": "#/definitions/Vec3",
+          "description": "g, calibrated"
+        },
+        "gyroscope": {
+          "$ref": "#/definitions/Vec3",
+          "description": "rad/s, calibrated"
+        },
         "battery": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "properties": {
-            "voltage": { "type": ["number", "null"] },
-            "current": { "type": ["number", "null"] }
+            "voltage": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "current": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
           },
           "additionalProperties": false
         },
-        "temperature": { "type": ["number", "null"] }
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "imuReady": {
+          "type": "boolean",
+          "description": "false while the adapter's IMU still-calibration for this controller is in progress; motion consumers should ignore accelerometer/gyroscope until true. Absent = true."
+        }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "controller": {
+                "const": "left"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "buttons": {
+                "$ref": "#/definitions/ButtonsLeft"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "controller": {
+                "const": "right"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "buttons": {
+                "$ref": "#/definitions/ButtonsRight"
+              }
+            }
+          }
+        }
+      ]
     },
     "MotionState": {
       "type": "object",
-      "required": ["timestamp", "controller", "orientation", "angularVelocity", "linearAcceleration", "motionSpeed", "gesture"],
+      "required": [
+        "timestamp",
+        "controller",
+        "orientation",
+        "angularVelocity",
+        "linearAcceleration",
+        "motionSpeed",
+        "gesture"
+      ],
       "properties": {
-        "timestamp": { "type": "number" },
-        "controller": { "enum": ["left", "right"] },
+        "timestamp": {
+          "type": "number"
+        },
+        "controller": {
+          "enum": [
+            "left",
+            "right"
+          ]
+        },
         "orientation": {
           "type": "object",
-          "required": ["quaternion", "euler"],
+          "required": [
+            "quaternion",
+            "euler"
+          ],
           "properties": {
             "quaternion": {
               "type": "array",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 4,
               "maxItems": 4
             },
             "euler": {
               "type": "object",
-              "required": ["pitch", "yaw", "roll"],
+              "required": [
+                "pitch",
+                "yaw",
+                "roll"
+              ],
               "properties": {
-                "pitch": { "type": "number" },
-                "yaw": { "type": "number" },
-                "roll": { "type": "number" }
+                "pitch": {
+                  "type": "number"
+                },
+                "yaw": {
+                  "type": "number"
+                },
+                "roll": {
+                  "type": "number"
+                }
               },
               "additionalProperties": false
             }
           },
           "additionalProperties": false
         },
-        "angularVelocity": { "$ref": "#/definitions/Vec3" },
-        "linearAcceleration": { "$ref": "#/definitions/Vec3" },
-        "motionSpeed": { "type": "number", "minimum": 0 },
+        "angularVelocity": {
+          "$ref": "#/definitions/Vec3"
+        },
+        "linearAcceleration": {
+          "$ref": "#/definitions/Vec3"
+        },
+        "motionSpeed": {
+          "type": "number",
+          "minimum": 0
+        },
         "gesture": {
-          "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/GestureEvent" }]
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/GestureEvent"
+            }
+          ]
         }
       },
       "additionalProperties": false
     },
     "GestureEvent": {
       "type": "object",
-      "required": ["gesture", "strength", "speed", "direction", "timestamp", "controller"],
+      "required": [
+        "gesture",
+        "strength",
+        "speed",
+        "direction",
+        "timestamp",
+        "controller"
+      ],
       "properties": {
         "gesture": {
-          "enum": ["SLASH_LEFT", "SLASH_RIGHT", "SLASH_UP", "SLASH_DOWN", "THRUST", "SHAKE", "ROTATE"]
+          "enum": [
+            "SLASH_LEFT",
+            "SLASH_RIGHT",
+            "SLASH_UP",
+            "SLASH_DOWN",
+            "THRUST",
+            "SHAKE",
+            "ROTATE"
+          ]
         },
-        "strength": { "type": "number", "minimum": 0, "maximum": 1 },
-        "speed": { "type": "number", "minimum": 0 },
+        "strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0
+        },
         "direction": {
           "type": "array",
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "minItems": 0,
           "maxItems": 3
         },
-        "timestamp": { "type": "number" },
-        "controller": { "enum": ["left", "right"] }
+        "timestamp": {
+          "type": "number"
+        },
+        "controller": {
+          "enum": [
+            "left",
+            "right"
+          ]
+        }
       },
       "additionalProperties": false
+    },
+    "Mark": {
+      "type": "object",
+      "description": "client -> adapter, diagnostic. Free-form action annotation recorded into --record captures; ignored otherwise."
     }
   }
 }

@@ -5,55 +5,153 @@ Both the Python adapter and the browser import from here.
 
 | Contract | Producer → Consumer | File |
 | --- | --- | --- |
-| **InputFrame** (§8.1) | Adapter → Browser (over WebSocket) | `schema.json#/definitions/InputFrame`, `frame.py`, `contracts.mjs` |
+| **InputFrame** (§8.1) | Adapter → clients (over WebSocket) | `schema.json#/definitions/InputFrame`, `frame.py`, `contracts.mjs` |
+| **Status** | Adapter → clients, one per controller | `schema.json#/definitions/Status`, `frame.py`, `contracts.mjs` |
 | **MotionState** (§7.2 / §8.2) | Motion Engine → Game | `schema.json#/definitions/MotionState`, `contracts.mjs` |
 | **GestureEvent** (§8.3) | Motion Engine → Game | `schema.json#/definitions/GestureEvent`, `contracts.mjs` |
+| Reference client | buttons/sticks for any JS project | `input-client.mjs` |
 
-Version: `PROTOCOL_VERSION = 1`. Sent in every WebSocket envelope; bump on any
-breaking field change.
+Version: `PROTOCOL_VERSION = 2`, sent as `v` in every WebSocket envelope; bumped
+on any breaking change. `adapter/tests/test_contracts.py` fails if Python, JS and
+the schema disagree on the version, the button names or the connection states.
+
+**Using Joy-Con 2 buttons/sticks from another project** needs only §1, §2, §5,
+§6 — no BLE, no IMU. Runnable examples: [`examples/`](../../examples/README.md).
 
 ---
 
+## 0. Changes in v2 (2026-10-24)
+
+v1 assumed one controller per adapter and conflated "WebSocket open" with
+"controller connected". v2 is incompatible, hence the bump:
+
+- One adapter streams a **left and a right** Joy-Con 2 on the same socket; every
+  frame and every status names its `controller`.
+- `status` is **per controller**, and `connection: "connected"` now means *that
+  controller is online and its frames are flowing* (v1 sent "connected" before
+  the BLE link was even up). The last status of each controller is replayed to
+  a client when it connects.
+- Frames start with the first packet. `imuReady` tells motion consumers when the
+  IMU calibration has been applied; buttons and sticks never wait for it.
+- `buttons` always carries the **full set** for that side (adds `home`,
+  `capture`, `c`).
+- `stick` is normalised per controller (centre + full travel, dead zone); the
+  untouched 12-bit values are in the new `stickRaw`.
+- New client → adapter message `mark` (diagnostic annotations for captures).
+
 ## 1. Transport envelope (WebSocket)
 
-`ws://127.0.0.1:8765`. Server = adapter, clients = browser pages (Playground and
-Game may both connect). One JSON object per text message:
+`ws://127.0.0.1:8765`. Server = adapter, clients = any number of pages /
+programs. One JSON object per text message:
 
 ```json
-{ "v": 1, "type": "frame",  "data": { /* InputFrame */ } }
-{ "v": 1, "type": "hello",  "data": { "adapter": "0.1.0", "source": "synthetic", "rateHz": 62 } }
-{ "v": 1, "type": "status", "data": { "connection": "connected", "controller": "left", "calibrated": true } }
+{ "v": 2, "type": "hello",  "data": { "adapter": "0.2.0", "source": "joycon2", "rateHz": 62 } }
+{ "v": 2, "type": "status", "data": { "controller": "right", "connection": "connected", "calibrated": false, "hint": null, "address": "59F5…" } }
+{ "v": 2, "type": "frame",  "data": { /* InputFrame */ } }
 ```
 
+- `hello` once on connect, then the last `status` of every controller.
 - `frame` messages are sent **at the device rate, with no downsampling and no
-  coalescing** (GOAL.md §9). One BLE notification → one `frame` message.
-- `hello` is sent once on connect; `status` whenever connection/calibration state
-  changes.
+  coalescing** (GOAL.md §9). One BLE notification → one `frame` message. On
+  macOS that is ~33 Hz per controller (BLE connection-interval limit).
+- Ordering: a controller's `status` and `frame` messages are delivered in the
+  order they happened. No frame of a controller follows its own
+  `"disconnected"` status.
+- Clients → adapter: only `{"v": 2, "type": "mark", "data": {...}}` is accepted.
+  It is written into the `--record` capture (if any) and otherwise ignored.
 
-## 2. InputFrame (Adapter → Browser)
+## 2. Status (one per controller)
+
+| field | meaning |
+| --- | --- |
+| `controller` | `"left"` / `"right"` |
+| `connection` | `connected` = online, frames flowing. `connecting` = looking for it (press Sync). `disconnected` = link just dropped. `reconnecting` / `cooldown` = adapter retrying (cooldown = the controller refused rapid reconnects; wait 2–3 min). `stopped` = adapter shutting down. |
+| `calibrated` | the adapter's IMU still-calibration for this controller has completed (motion only) |
+| `hint` | human-readable next step, or null |
+| `address` | BLE address of the unit (on macOS a per-host UUID), diagnostic |
+
+Lifecycle: `connecting` → `connected` → (link lost) `disconnected` →
+`connecting`/`reconnecting` → `connected` … The adapter keeps retrying by
+address; after a disconnect the Joy-Con 2 usually has to be put back into
+pairing mode with its Sync button. On reconnect the adapter re-enables input +
+IMU; the controller keeps its IMU calibration and stick centre, so
+`calibrated` stays true and input is usable immediately.
+
+## 3. InputFrame (adapter → clients)
 
 ```json
 {
-  "timestamp": 12345.678,        // adapter time.monotonic() seconds, float; receipt time of the BLE notification
-  "seq": 26376,                  // controller packet id (wraps); for drop detection
+  "timestamp": 12345.678,        // adapter time.monotonic() seconds at BLE receipt
+  "seq": 26376,                  // controller's own ms counter (wraps); for drop detection
   "controller": "left",          // "left" | "right"
-  "buttons": { "up": false, "l": false, "...": false },
-  "stick": { "x": 0.0, "y": 0.0 },          // [-1, 1]
-  "accelerometer": { "x": 0.0, "y": 0.0, "z": 1.0 },   // g, calibrated (bias removed)
-  "gyroscope": { "x": 0.0, "y": 0.0, "z": 0.0 },       // rad/s, calibrated (bias removed)
+  "buttons": { "up": false, "down": false, "...": false },   // full set for that side, see §5
+  "stick": { "x": 0.0, "y": 0.0 },           // normalised, see §4
+  "stickRaw": { "x": 1925, "y": 2191 },      // 12-bit counts as reported, 0..4095 (diagnostic)
+  "accelerometer": { "x": 0.0, "y": 0.0, "z": 1.0 },   // g, calibrated (bias removed once imuReady)
+  "gyroscope": { "x": 0.0, "y": 0.0, "z": 0.0 },       // rad/s, calibrated (bias removed once imuReady)
   "battery": { "voltage": 3.9, "current": 0.0 },        // volts, mA; may be null
-  "temperature": 30.0                                    // deg C; may be null
+  "temperature": 30.0,                                  // deg C; may be null (unverified field)
+  "imuReady": true                                      // false while the IMU calibration is pending
 }
 ```
 
-Notes:
-- `gyroscope` is **rad/s** here (decoder works in deg/s; the adapter converts on
-  normalize so the Motion Engine can integrate directly). ADR-4.
-- `accelerometer` / `gyroscope` already have the calibration bias subtracted.
-- `orientation` is intentionally **not** in InputFrame — the adapter does not do
-  fusion; the Motion Engine owns orientation.
+- `gyroscope` is **rad/s** (ADR-4). `orientation` is intentionally not here —
+  the Motion Engine owns fusion.
+- `imuReady: false` → ignore `accelerometer`/`gyroscope` for motion (the
+  Motion Engine does). The calibration needs ~2 s of the controller lying
+  still; it restarts if the controller moves. `--no-calibrate` makes every
+  frame `imuReady: true`. Absent (other providers) = true.
 
-## 3. MotionState (Motion Engine → Game)
+## 4. Sticks
+
+`stick.x` / `stick.y` in [-1, 1]: **+x = right, +y = up**, magnitude clamped to
+the unit circle (diagonals reach ~(0.71, 0.71), not (1, 1)), and **exactly
+0, 0 at rest** (radial dead zone, default 0.08, output rescaled from its edge).
+
+The Joy-Con 2 reports raw, uncalibrated 12-bit values. Per controller the
+adapter learns the rest centre (first still moment near 2048 after connect —
+keep thumbs off the sticks for half a second after connecting) and the travel in
+each of the four directions (starts at 1100 counts and only grows to the
+largest push seen), so a full push reads 1.0 on every unit. `stickRaw` keeps
+the untouched counts for diagnostics or custom calibration.
+(Why: v1 divided by 2048 although the real travel is only ~±1150–1250 counts,
+so sticks topped out near ±0.6 — see `adapter/src/calibration/stick.py`.)
+
+## 5. Buttons
+
+`true` while held. Every frame carries the full set of its side; edge
+detection (press/release) is the client's job (§6).
+
+| side | names |
+| --- | --- |
+| left | `up` `down` `left` `right` (D-pad), `l` `zl`, `sl` `sr` (rail), `minus`, `capture`, `stick` (stick click) |
+| right | `a` `b` `x` `y`, `r` `zr`, `sl` `sr` (rail), `plus`, `home`, `c` (C / GameChat), `stick` (stick click) |
+
+The Sync button is not an input — it puts the controller into pairing mode.
+Bit positions and their verification status: `docs/JOYCON2_PROTOCOL.md` §E.
+
+## 6. Client rules (what `input-client.mjs` implements)
+
+1. Track state per `controller`. Left and right are independent.
+2. A controller is **online** only while its last status is `connected`.
+   Ignore frames for a controller that is not online.
+3. Press/release = edges between consecutive frames of the same controller.
+4. When a controller goes offline (status not `connected`), when the WebSocket
+   closes, or when no frame arrived for ~1 s (stale): **release everything it
+   had pressed and centre its stick**. When it comes back, the next frame
+   re-presses whatever is still held.
+5. Reject envelopes whose `v` differs from the version you were written for.
+
+```js
+import { connectJoyCon2 } from "shared/protocol/input-client.mjs";
+const jc = connectJoyCon2({ controllers: ["right"] });     // or both (default)
+jc.on("press",   ({ controller, button }) => …);
+jc.on("release", ({ controller, button, reason }) => …);  // reason: input | offline | stale | transport
+jc.on("device",  (d) => d.online …);
+jc.device("right").stick;  jc.isPressed("right", "zr");
+```
+
+## 7. MotionState (Motion Engine → Game)
 
 ```json
 {
@@ -67,7 +165,7 @@ Notes:
 }
 ```
 
-## 4. GestureEvent (Motion Engine → Game)
+## 8. GestureEvent (Motion Engine → Game)
 
 ```json
 {

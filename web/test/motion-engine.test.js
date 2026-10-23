@@ -75,3 +75,20 @@ test("still input after calibration -> near-zero angular velocity (dead zone)", 
   const avg = speeds.reduce((s, v) => s + v, 0) / speeds.length;
   assert.ok(avg < 0.2, `avg angular speed after calibration = ${avg}`);
 });
+
+test("frames flagged imuReady:false (adapter still calibrating) are not integrated", () => {
+  const engine = new MotionEngine();
+  const motions = [];
+  engine.addEventListener("motion", (e) => motions.push(e.detail));
+  const f = (t, imuReady) => ({
+    timestamp: t, seq: 0, controller: "left", buttons: {}, stick: { x: 0, y: 0 },
+    accelerometer: { x: 0, y: 0, z: 1 }, gyroscope: { x: 0, y: 0, z: 5 }, imuReady,
+  });
+  engine.startCalibration(0.5);
+  for (let i = 0; i < 40; i++) engine.feed(f(i / 33, false));
+  assert.equal(motions.length, 0);
+  assert.ok(engine.isCalibrating(), "calibration must wait for imuReady frames");
+  for (let i = 40; i < 80; i++) engine.feed(f(i / 33, true));
+  assert.ok(motions.length > 0);
+  assert.equal(engine.isCalibrating(), false);
+});
