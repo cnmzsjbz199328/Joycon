@@ -124,12 +124,13 @@ class ReplaySource(FrameSource):
     name = "replay"
 
     def __init__(self, path: str | Path, side: str = "left", rate_hz: int = NOMINAL_SAMPLE_RATE_HZ,
-                 loop: bool = True, max_gap_s: float = 1.0):
+                 loop: bool = True, max_gap_s: float = 1.0, speed: float = 1.0):
         self.path = Path(path)
         self.side = side
         self.rate_hz = rate_hz
         self.loop = loop
         self.max_gap_s = max_gap_s
+        self.speed = speed  # .jsonl playback speed; 0 = as fast as possible
         self._stop = False
 
     def _hex_packets(self) -> list[bytes]:
@@ -167,7 +168,7 @@ class ReplaySource(FrameSource):
         for t, item in recs:
             if self._stop:
                 return
-            await asyncio.sleep(min(max(0.0, t - prev), self.max_gap_s))
+            await asyncio.sleep(min(max(0.0, t - prev), self.max_gap_s) / self.speed if self.speed > 0 else 0)
             prev = t
             if isinstance(item, StateChange):
                 yield item
@@ -223,6 +224,8 @@ class JoyCon2Source(FrameSource):
         self._tasks: list[asyncio.Task] = []
         self._discovery: asyncio.Task | None = None
         self.dropped = 0
+        self.settle_s = 2.0  # after starting connections: let unknown-side units resolve
+        self.idle_s = 0.5    # between empty scans
 
     def _put_state(self, side: str, state: str, hint: str | None = None, info: dict | None = None) -> None:
         self._queue.put_nowait(StateChange(side, state, hint, info or {}))
@@ -274,15 +277,15 @@ class JoyCon2Source(FrameSource):
         from .bluetooth.scanner import BluetoothUnavailable, scan_for_controllers
 
         for s in self.sides:
-            self._put_state(s, "connecting", f"looking for the {s} Joy-Con 2 -- press its Sync button")
+            self._put_state(s, "connecting", f"looking for the {s} Joy-Con 2 -- hold its Sync button until the LEDs run")
         if self.address:
             self._start(self.address, self.sides[0] if len(self.sides) == 1 else "unknown")
             return
-        tried: set[str] = set()
+        seen: set[str] = set()  # every address already started or skipped; never re-reported
         while self._missing():
             try:
                 found = await scan_for_controllers(
-                    timeout=self.scan_timeout, want=len(self._missing()), exclude_addresses=tried,
+                    timeout=self.scan_timeout, want=len(self._missing()), exclude_addresses=seen,
                 )
             except BluetoothUnavailable as exc:
                 for s in self._missing():
@@ -290,16 +293,15 @@ class JoyCon2Source(FrameSource):
                 await asyncio.sleep(5.0)
                 continue
             for c in found:
-                if c.side in self.sides and c.side not in self._missing():
-                    continue  # already have this side
-                if c.side != "unknown" and c.side not in self.sides:
+                seen.add(c.address)
+                if c.side != "unknown" and c.side not in self._missing():
+                    log.info("ignoring %s (%s): side not wanted or already connected", c.address, c.side)
                     continue
                 log.info("found %s addr=%s side=%s (from %s) mdata=%s",
                          c.name, c.address, c.side, c.side_source, c.manufacturer_data.hex(" "))
-                tried.add(c.address)
                 self._start(c.address, c.side, c.device)
             # unknown-side units resolve their side asynchronously; give them a moment
-            await asyncio.sleep(2.0 if found else 0.5)
+            await asyncio.sleep(self.settle_s if found else self.idle_s)
 
     async def frames(self) -> AsyncIterator[SourceItem]:
         self._discovery = asyncio.create_task(self._discover())
@@ -335,7 +337,7 @@ def make_source(kind: str, **kw) -> FrameSource:
     if kind == "synthetic":
         return SyntheticSource(sides=sides)
     if kind == "replay":
-        return ReplaySource(kw["file"], side=sides[0], loop=kw.get("loop", True))
+        return ReplaySource(kw["file"], side=sides[0], loop=kw.get("loop", True), speed=kw.get("speed") or 1.0)
     if kind == "joycon2":
         return JoyCon2Source(sides=sides, address=kw.get("address"))
     raise ValueError(f"unknown source: {kind}")

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from adapter.src.calibration.stick import StickNormalizer
+from adapter.src.calibration.stick import StickNormalizer, parse_factory_stick_cal
 from adapter.src.decoder.encode import build_raw_packet
 from adapter.src.decoder.packet import decode_packet, decode_stick_raw
 
@@ -92,3 +92,41 @@ def test_moving_stick_never_settles_and_extents_wait_for_a_centre():
     assert n.center is None
     n.normalize(2048 + 1500, 2048)
     assert n.extents[1] == n.initial_extent
+
+
+# Factory blocks read from the project's two units on 2026-10-24 (flash 0x130A8).
+LEFT_FACTORY = "73 77 86 ee e4 47 88 04 4e"
+RIGHT_FACTORY = "4c 88 7c b3 a4 4d c3 54 48"
+
+
+def test_parse_factory_blocks_from_both_units():
+    left = parse_factory_stick_cal(LEFT_FACTORY)
+    assert (left.center, left.plus, left.minus) == ((1907, 2151), (1262, 1150), (1160, 1248))
+    right = parse_factory_stick_cal(bytes.fromhex(RIGHT_FACTORY.replace(" ", "")))
+    assert (right.center, right.plus, right.minus) == ((2124, 1992), (1203, 1242), (1219, 1157))
+    assert parse_factory_stick_cal("ff" * 9) is None  # blank flash
+    assert parse_factory_stick_cal(b"\x00" * 9) is None
+    assert parse_factory_stick_cal(None) is None
+
+
+def test_factory_calibration_gives_zero_rest_and_full_travel_from_the_first_frame():
+    n = StickNormalizer()
+    n.apply_factory(parse_factory_stick_cal(LEFT_FACTORY))
+    # measured rest of this unit in the same session: median (1895, 2161)
+    assert n.normalize(1895, 2161) == (0.0, 0.0)
+    assert n.normalize(1907 + 1262, 2151) == pytest.approx((1.0, 0.0))
+    assert n.normalize(1907, 2151 + 1150) == pytest.approx((0.0, 1.0))
+    assert n.normalize(1907 - 1160, 2151) == pytest.approx((-1.0, 0.0))
+    assert n.normalize(1907, 2151 - 1248) == pytest.approx((0.0, -1.0))
+    assert n.source == "factory"
+
+
+def test_factory_survives_a_held_stick_at_connect_and_keeps_learned_travel():
+    n = StickNormalizer()
+    for _ in range(20):
+        n.normalize(1907 + 900, 2151)  # thumb on the stick while connecting
+    n.apply_factory(parse_factory_stick_cal(LEFT_FACTORY))
+    assert n.normalize(1907 + 900, 2151)[0] == pytest.approx((900 / 1262 - 0.08) / 0.92, abs=1e-3)
+    n.normalize(1907, 2151 - 1295)  # pushed harder than the factory travel (seen on HW)
+    n.apply_factory(parse_factory_stick_cal(LEFT_FACTORY))  # reconnect
+    assert n.extents[2] == 1295

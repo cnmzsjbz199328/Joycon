@@ -4,7 +4,7 @@
 > **读者**：拿到 Joy-Con 2 实机的人 + 接手的执行 Agent。
 > **前置**：软件侧（Phase 0–8）已全部完成并通过 fallback 验收，见 [TESTING.md](./TESTING.md)。本手册是 GOAL.md §13 要求的「Joy-Con 2 硬件验证单独完成、独立验收」的那一步。
 >
-> 一句话现状：**软件全部就绪，只差把真机接上、对照社区逆向的协议表逐条核对、把 `[未真机验证]` 标记去掉。**
+> 一句话现状（2026-10-24）：BLE 链路、IMU、**全部按键与两侧摇杆、左右同时连接、断连清键与重连**均已真机验收（§5 第 1–5 轮）。仍未做：体感 UP/DOWN 调参（暂停）、`game.html` 实机验收、延迟分位数（Step G）、backoff 全序列（Step F）。
 
 ---
 
@@ -41,8 +41,8 @@
 关键工具（都已存在）：
 - `python -m adapter.src.bluetooth.prototype` —— 扫描 / 连接 / dump 原始 notification + GATT 树。
 - `python -m adapter.src.reader --source joycon2` —— 解码后在终端实时打印 ax/ay/az、gx/gy/gz、按键、摇杆。
-- `python -m adapter.src.service --source joycon2` —— 完整链路 + WebSocket（`ws://127.0.0.1:8765`）。
-- `cd web && npm run dev` —— 浏览器端，provider 选 `Joy-Con 2 (adapter)`。
+- `python -m adapter.src.service --source joycon2` —— 完整链路 + WebSocket（`ws://127.0.0.1:8765`）；默认**同时找左右两只**（`--side left|right` 只连一侧），`--record FILE.jsonl` 全程录包（原始报文 + 连接状态 + 页面发来的动作标注），`--source replay --file FILE.jsonl [--speed 10]` 回放。
+- `cd web && npm run dev` —— 浏览器端：`input.html` 看全部按键/摇杆/事件（带引导式验收流程），Playground/Fruit Slash 的 provider 选 `Joy-Con 2 (adapter)`。
 
 ---
 
@@ -187,7 +187,7 @@ cd web && npm run dev
 | accel | ✅ 六朝向重力单轴 ≈ 1.00 g；int16 LE signed 确认 |
 | gyro | 🟡 静置 <2 dps、转动定轴自洽；峰值仅 ~95 dps 无 wrap；未做精确角度标定 |
 | 采样率 | 🟡 **33.5 Hz**（疑 macOS 连接间隔限制）；`0x00` = 毫秒时间戳 |
-| 按键（右） | ✅ 8 位 + StickPress + **C=`0x40`(字节0x05 bit6)** 逐个确认；plus/home 未分辨 |
+| 按键（右） | 🟡 8 位 + StickPress + **C=`0x40`(字节0x05 bit6)** 各点亮唯一一位；plus/home 未分辨。**更正（2026-10-24）**：当时只确认了“每键一位”，没核对名字——A↔B、X↔Y、SL↔SR 实际是对调的，第 5 轮订正 |
 | 重连冷却 | 🟡 观察到：连过一次后短时间再连 `TimeoutError`（即社区说的控制器级冷却）；未跑满 backoff 序列 |
 
 **代码改动**：`adapter/src/protocol/constants.py`（Service UUID、battery 偏移、注释）、`adapter/src/decoder/buttons.py`（C 键）。19 项 pytest 仍全过；真机包端到端 `decode_packet` 验证通过。
@@ -227,7 +227,7 @@ cd web && npm run dev
 | 连接 + IMU 使能 | ✅ 与右一致，`ENABLE_IMU_1/2` 后 63 字节报文含活值 |
 | Accel 静置 | ✅ 单轴 ≈0.98–1.0 g，其余 ≈0（int16 LE 假设成立） |
 | Gyro 静置/转动/快转 | ✅ 静置 <0.2 dps；慢转、快转（峰值约 -46.5 dps）方向自洽，**未见溢出/wrap** |
-| 摇杆 `data[10:13]` | ✅ 回中 ≈0，四向推杆方向正确、连贯（非垃圾值）；幅度约 ±0.5–0.6，未测到贴满 ±1.0（大概率推杆力度问题，非解码问题） |
+| 摇杆 `data[10:13]` | ✅ 回中 ≈0，四向推杆方向正确、连贯（非垃圾值）；幅度约 ±0.5–0.6，未测到贴满 ±1.0（当时判断为推杆力度问题——**更正（2026-10-24）**：是归一化除以 2048 而实际行程只有 ±1150–1300，第 5 轮修复） |
 | 十个按键掩码（D-Up/Down/Left/Right/−/L/ZL/Stick/SL/SR） | ✅ **全部与 `BUTTON_MASKS_LEFT` 现有假设完全一致，无需改动任何常量** |
 | 采样率 | 33.2 Hz（与右一致，确认是 macOS BLE 连接间隔限制，非单只手柄问题） |
 
@@ -250,7 +250,27 @@ cd web && npm run dev
 
 **仍未做**：`game.html` 切水果验收（#5）——手势基本稳定后应该顺理成章，但还没实测过。
 
-### 第 5 轮（计划，尚未执行）— 左 Joy-Con 2，UP/DOWN 轴单独调参
+### 第 5 轮 — 2026-10-24，全按键与摇杆专项（左右同时连接）
+
+**目标**：让其他项目不懂 BLE/IMU 也能通过 WebSocket 稳定读到左右手柄全部按键与摇杆。体感调参暂停，不在本轮。
+**工具**（均已入库）：`service.py --source joycon2 --record adapter/captures/<文件>.jsonl`（一次连左右两只）、`web/input.html`（全部按键/摇杆/事件 + 引导流程）、`adapter/tests/fixtures/hw_2026-10-24_input.jsonl`（本轮抓包裁剪，供回放与回归测试）。分析用的一次性脚本在会话 scratchpad（逐步骤原始位统计、摇杆扇区统计），未入库。
+**抓包**：`adapter/captures/2026-10-24-input.jsonl`（A 段）、`…-round2.jsonl`（B–D 段），本地保留（`.gitignore`）；入库的是裁剪后的 fixture（3 个时间窗，原始字节未改，只丢掉无变化的包）。
+
+| 段 | 用户动作 | 结果 |
+| --- | --- | --- |
+| A | 按 Sync 连两只；在页面上自由按全部键、拨摇杆 | 两只同时连上（各 33.2 Hz）；**左右判定来自广播 Product ID**（`0x2067`/`0x2066`），GATT 复核一致；**两只的摇杆出厂标定 `0x130A8` 读取成功**；用户反馈 **ABXY 对应不对** → 原始位与 [ND]/Joy2Win 映射一致、与本项目旧表（[FR-PY]）A↔B、X↔Y、SL↔SR 对调 |
+| — | 修复：右手掩码改按 [ND]；摇杆改用出厂标定（中心 + 四向行程，格式由 A 段数据确定：中心/＋行程/－行程） | 单元测试 80 项通过后重启 adapter |
+| B | 按页面按键网格顺序逐个按左 11 键、右 12 键 | 每键唯一一位；**用户确认右手 A/B/X/Y/SL/SR 与印字一致**；左手在 IMU 标定完成（17:42:18）之前按下的 ↑…Capture 全部正常送达 → **按键不依赖 IMU 标定** |
+| C | 两摇杆：静置、四向推到底、绕圈 | 静置预死区偏移最大 0.038（死区 0.08），输出精确 0；四向峰值 0.98–1.00；八扇区（含对角）全部 ≥0.99 |
+| D | 两摇杆同时推到底；右 A+B+R 同按；按住 A 时短按 Sync；长按 Sync 到跑马灯后按 A | 两摇杆同时 ≥0.95 共 2.4 s；A+B+R 同按 7 s 无串键，A 连续 18 s；断开前最后一包 A=按下，`disconnected` 约 0.7 s 后到达（客户端据此释放 A，e2e 用这份真机抓包回放验证）；长按 Sync 后自动重连，A 正常 |
+
+**重连诊断**：第一次断开后 adapter 按地址重试约 2 分钟都没找到手柄；另起独立扫描并请用户再按 Sync（这次灯在跑马）→ 17:52:31 扫描看到配对广播（地址未变）、17:52:32 adapter 已自动重连。结论：**断开后手柄不会自己再向本机广播，必须长按 Sync 到指示灯跑马**；adapter 无需重启。已把状态 `hint` 改成“长按 Sync 直到灯跑马”。
+**Sync**：两份抓包共 78 064 包，按键域内无任何未映射位，`0x07` 恒为 `0xE0` → Sync 不作为输入上报。
+**测试节奏的教训**：页面的英文“引导式验收流程”实际没被使用（两次都直接点按网格），所以动作标注（mark）为 0；改为聊天里给中文动作清单 + 从原始抓包自动判定后顺利完成。以后实机测试直接给中文步骤清单，不依赖页面上的英文引导面板。
+
+**代码改动**：`decoder/buttons.py`（右手 A/B/X/Y/SL/SR 订正，新增 Home、Capture）、`calibration/stick.py`（出厂标定 + 分方向行程 + 圆形限幅 + 径向死区）、`bluetooth/connection.py`（读出厂标定、GATT 侧别、扫不到不计冷却、重连提示）、`sources.py`/`service.py`（左右同时、状态与帧同队列、按键不等 IMU）、协议 v2（`shared/protocol/`）、`web/input.html`、`examples/`。新增真机回归 `adapter/tests/test_hw_capture.py`。
+
+### 体感 UP/DOWN 轴单独调参（计划，**暂停**，未执行）— 左 Joy-Con 2
 
 **触发**：用户反馈实际体验是"上下反应慢、左右反应快"。已排除的假设：这**不是** Nintendo Switch Sports 那种"对屏幕按键"朝向（yaw）校准缺失导致的——那个校准解决的是水平朝向漂移，和 pitch（上下）轴的响应速度是两个正交的问题；代码里也确认过 `motion-engine.js` 对 x/y/z 三轴用的是同一套去偏置/死区/低通（`gyroF = this.gyroLP.update(...)`），没有针对某个轴的额外滤波延迟。完整推理见与用户的讨论（本文件对应会话）。
 

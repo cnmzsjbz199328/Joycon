@@ -248,3 +248,18 @@
 - SilverTuxedo/JoyConBridge — https://github.com/SilverTuxedo/JoyConBridge
 - `@german77`（GitHub）— joycon2py README 中 notification 布局的原始提供者
 - bleak BLE 库 — https://github.com/hbldh/bleak
+
+---
+
+## 补充：2026-10-24 全按键与摇杆专项查阅的社区资料
+
+只为回答具体问题而读相关文件，**未移植任何代码**（只取偏移、UUID、flash 地址等事实）。
+
+| 仓库 @ commit | 读了什么 | 用于 | 与谁同源 |
+| --- | --- | --- | --- |
+| [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research) @ `a3306b47` | `hid_reports.md`、`bluetooth_interface.md`、`commands.md`、`memory_layout.md`、`descriptors.md` | 按键域 0x04–0x07 全表（Home/Capture/右 ABXY/SL/SR，无 Sync 位）；广播 Product ID 判左右；左右专属 GATT char；命令应答 char；读 flash 命令与摇杆标定地址 `0x130A8` | **一手研究**（USB/BLE 抓包、flash dump） |
+| [Logan-Gaillard/Joy2Win](https://github.com/Logan-Gaillard/Joy2Win) @ `932d6d7d` | `controllers/JoyconR.py`、`JoyconL.py`、`controller_command.py` | 右手掩码佐证、命令应答 UUID 佐证；固定摇杆边界 780..3260 **未采用** | README 致谢 ndeadly → 与上行**非独立** |
+| [TheFrano/joycon2cpp](https://github.com/TheFrano/joycon2cpp) @ `2e410b7e` | `testapp/src/JoyConDecoder.cpp` | Home/Capture 掩码佐证；摇杆 ×1.7 增益 + 0.08 死区印证了 ±0.6 的根因，**增益未采用**；其 B/X 映射与 [ND] 不同，**未采用** | 与 `joycon2py` 同作者、同源（@german77 布局） |
+| [OZORDI/JoyCon2Mac](https://github.com/OZORDI/JoyCon2Mac) @ `f5947df0` | `JoyCon2Mac/JoyConDecoder.cpp` | 查看 macOS 端摇杆处理：自动找中心但仍 ÷2048 → 同样到不了 1.0，**未采用** | 注释写明掩码照搬 joycon2cpp → 非独立 |
+
+结论：社区只有两条来源线（ndeadly 一手研究 vs. @german77 布局），二者在右手 ABXY/SL/SR 上冲突，由本项目 2026-10-24 真机抓包裁决为 ndeadly 正确；摇杆出厂标定的 9 字节格式（中心 / +行程 / −行程）社区未写明，由本项目两只手柄的实测数据确定。详见 [JOYCON2_PROTOCOL.md](./JOYCON2_PROTOCOL.md) §E、§D.5、§H.1。

@@ -10,26 +10,26 @@ low byte; LEFT state = data[4:7], so 0x05 is the middle byte.
 Status per entry (see docs/JOYCON2_PROTOCOL.md section E):
   LEFT  up/down/left/right/minus/l/zl/stick/sl/sr -- HW-verified 2026-09-28.
   RIGHT r/zr/plus/stick/c                         -- HW-verified 2026-09-06.
-  RIGHT a/b/x/y/sl/sr -- bits HW-seen 2026-09-06, but the label->bit mapping is
-        contradicted by [ND] and Joy2Win (both give Y=0x01 X=0x02 B=0x04 A=0x08
-        SR=0x10 SL=0x20 in byte 0x04, i.e. a<->b, x<->y, sl<->sr swapped vs.
-        below). Re-checked label by label in the 2026-10-24 hardware round.
-  RIGHT home, LEFT capture -- from [ND] + Joy2Win + joycon2cpp (all agree),
-        pending hardware.
+  RIGHT a/b/x/y/sl/sr -- the [FR-PY] table this file started from had
+        a<->b, x<->y, sl<->sr swapped; HW 2026-10-24 showed ABXY lighting the
+        wrong names. Now per [ND] hid_reports.md + Joy2Win (byte 0x04: Y=0x01
+        X=0x02 B=0x04 A=0x08 SR=0x10 SL=0x20).
+  RIGHT home, LEFT capture -- byte 0x05 bit 4 / bit 5 per [ND], Joy2Win and
+        joycon2cpp; each lit exactly one bit on HW 2026-10-24.
   Sync is not in any known report layout; it is the pairing button.
 """
 
 from __future__ import annotations
 
 BUTTON_MASKS_RIGHT: dict[str, int] = {
-    "a": 0x000400,
-    "b": 0x000800,
-    "x": 0x000100,
-    "y": 0x000200,
+    "a": 0x000800,
+    "b": 0x000400,
+    "x": 0x000200,
+    "y": 0x000100,
     "r": 0x004000,
     "zr": 0x008000,
-    "sl": 0x001000,
-    "sr": 0x002000,
+    "sl": 0x002000,
+    "sr": 0x001000,
     "plus": 0x000002,
     "home": 0x000010,  # byte 0x05 bit 4 -- [ND]/Joy2Win/joycon2cpp
     "c": 0x000040,  # Joy-Con 2 "C" button -- HW-verified 2026-09-06 (byte 0x05 bit 6)

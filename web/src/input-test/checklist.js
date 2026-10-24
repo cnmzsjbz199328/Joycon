@@ -299,7 +299,7 @@ function disconnectHeld(side, button) {
 function reconnect(side, button) {
   return {
     id: `reconnect-${side}`, section: "Sync / disconnect", expect: { online: side, then: key(side, button) },
-    title: `${SIDE[side]}: let it reconnect (press Sync again if it does not come back), then press ${BUTTON_LABELS[side][button]}`,
+    title: `${SIDE[side]}: hold its Sync button until the LEDs run (it does not come back by itself), wait for online, then press ${BUTTON_LABELS[side][button]}`,
     detail: "Measures time until it is online again; input must work right away.", timeoutMs: 180000,
     onEvent(type, d, ctx) {
       if (type === "device" && d.controller === side && d.online && ctx.s.onlineAt == null) ctx.s.onlineAt = ctx.now();

@@ -72,10 +72,13 @@ programs. One JSON object per text message:
 
 Lifecycle: `connecting` → `connected` → (link lost) `disconnected` →
 `connecting`/`reconnecting` → `connected` … The adapter keeps retrying by
-address; after a disconnect the Joy-Con 2 usually has to be put back into
-pairing mode with its Sync button. On reconnect the adapter re-enables input +
-IMU; the controller keeps its IMU calibration and stick centre, so
-`calibrated` stays true and input is usable immediately.
+address on its own. Verified on hardware (2026-10-24): a dropped Joy-Con 2
+(e.g. after a short Sync press while connected) does **not** advertise to us
+again by itself — **hold its Sync button until the player LEDs run**, and the
+adapter reconnects within ~1 s (the status `hint` says so). On reconnect the
+adapter re-enables input + IMU; the controller keeps its IMU calibration and
+stick calibration, so `calibrated` stays true and input is usable immediately.
+A link loss reaches clients as `disconnected` ~0.7 s after the last frame.
 
 ## 3. InputFrame (adapter → clients)
 
@@ -108,13 +111,14 @@ IMU; the controller keeps its IMU calibration and stick centre, so
 the unit circle (diagonals reach ~(0.71, 0.71), not (1, 1)), and **exactly
 0, 0 at rest** (radial dead zone, default 0.08, output rescaled from its edge).
 
-The Joy-Con 2 reports raw, uncalibrated 12-bit values. Per controller the
-adapter learns the rest centre (first still moment near 2048 after connect —
-keep thumbs off the sticks for half a second after connecting) and the travel in
-each of the four directions (starts at 1100 counts and only grows to the
-largest push seen), so a full push reads 1.0 on every unit. `stickRaw` keeps
-the untouched counts for diagnostics or custom calibration.
-(Why: v1 divided by 2048 although the real travel is only ~±1150–1250 counts,
+The Joy-Con 2 reports raw, uncalibrated 12-bit values. At connect the adapter
+reads each controller's **factory stick calibration** (centre + travel in each
+direction) and normalises with it; travel only grows if a push goes further.
+If the read ever fails it falls back to learning the rest centre (first still
+moment near 2048) and a nominal 1100-count travel. On the project's two units:
+exactly 0 at rest, r ≥ 0.99 in all 8 directions. `stickRaw` keeps the untouched
+counts for diagnostics or custom calibration.
+(Why: v1 divided by 2048 although the real travel is only ~±1150–1300 counts,
 so sticks topped out near ±0.6 — see `adapter/src/calibration/stick.py`.)
 
 ## 5. Buttons
@@ -127,7 +131,9 @@ detection (press/release) is the client's job (§6).
 | left | `up` `down` `left` `right` (D-pad), `l` `zl`, `sl` `sr` (rail), `minus`, `capture`, `stick` (stick click) |
 | right | `a` `b` `x` `y`, `r` `zr`, `sl` `sr` (rail), `plus`, `home`, `c` (C / GameChat), `stick` (stick click) |
 
-The Sync button is not an input — it puts the controller into pairing mode.
+The Sync button is not an input (verified: never appears in any frame) — a
+short press while connected disconnects the controller, holding it starts
+pairing.
 Bit positions and their verification status: `docs/JOYCON2_PROTOCOL.md` §E.
 
 ## 6. Client rules (what `input-client.mjs` implements)

@@ -32,7 +32,7 @@ from typing import Any
 from shared.protocol.frame import HelloData, StatusData
 
 from .calibration.calibrator import CalibrationResult, Calibrator
-from .calibration.stick import StickNormalizer
+from .calibration.stick import StickNormalizer, parse_factory_stick_cal
 from .capture import CaptureWriter
 from .decoder.packet import PacketTooShort, decode_packet
 from .normalize import to_input_frame
@@ -76,7 +76,8 @@ class Adapter:
         self.args = args
         self.recorder: CaptureWriter | None = None
         self.server = BroadcastServer(host=args.host, port=args.port, on_message=self._on_client_message)
-        self.source = source or make_source(args.source, side=args.side, file=args.file, loop=True)
+        self.source = source or make_source(args.source, side=args.side, file=args.file, loop=True,
+                                            speed=args.speed)
         self.devices: dict[str, Device] = {}
         self._decoded = 0
         self._short = 0
@@ -99,6 +100,9 @@ class Adapter:
         dev.address = ev.info.get("address", dev.address)
         if self.recorder is not None:
             self.recorder.state(ev.side, ev.state, ev.hint, ev.info)
+        cal = parse_factory_stick_cal((ev.info.get("flash") or {}).get("factory"))
+        if ev.state == "connected" and cal is not None:
+            dev.stick.apply_factory(cal)
         if ev.state == "connected" and dev.calibration is None and dev.calibrator is not None:
             dev.calibrator.reset()
             dev.hint = "buttons and sticks live; IMU calibrating -- set the Joy-Con down still for ~2 s"
@@ -200,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Joy-Con 2 adapter: decode + WebSocket bridge")
     p.add_argument("--source", default="synthetic", choices=["synthetic", "replay", "joycon2"])
     p.add_argument("--file", help="capture file for --source replay (.jsonl recording or hex lines)")
+    p.add_argument("--speed", type=float, default=1.0, help="replay speed for .jsonl recordings (e.g. 10)")
     p.add_argument("--side", choices=["left", "right", "both"],
                    help="joycon2: which controllers to connect (default both); "
                         "synthetic/replay: which side to emulate (default left)")

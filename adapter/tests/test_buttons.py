@@ -32,6 +32,14 @@ def _raw_with_bit(byte_off: int, bit: int) -> bytes:
 
 @pytest.mark.parametrize("side,name,byte_off,bit", [
     # [ND] hid_reports.md button bytes at 0x04..0x06 (independent of the FR-PY masks)
+    ("right", "y", 0x04, 0x01),
+    ("right", "x", 0x04, 0x02),
+    ("right", "b", 0x04, 0x04),
+    ("right", "a", 0x04, 0x08),
+    ("right", "sr", 0x04, 0x10),
+    ("right", "sl", 0x04, 0x20),
+    ("right", "r", 0x04, 0x40),
+    ("right", "zr", 0x04, 0x80),
     ("right", "home", 0x05, 0x10),
     ("right", "c", 0x05, 0x40),
     ("right", "plus", 0x05, 0x02),
@@ -40,6 +48,12 @@ def _raw_with_bit(byte_off: int, bit: int) -> bytes:
     ("left", "minus", 0x05, 0x01),
     ("left", "stick", 0x05, 0x08),
     ("left", "zl", 0x06, 0x80),
+    ("left", "l", 0x06, 0x40),
+    ("left", "sl", 0x06, 0x20),
+    ("left", "sr", 0x06, 0x10),
+    ("left", "left", 0x06, 0x08),
+    ("left", "right", 0x06, 0x04),
+    ("left", "up", 0x06, 0x02),
     ("left", "down", 0x06, 0x01),
 ])
 def test_shared_byte_positions(side, name, byte_off, bit):

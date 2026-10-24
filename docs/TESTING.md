@@ -12,14 +12,20 @@ python -m venv .venv && .venv/bin/pip install -r adapter/requirements.txt
 cd adapter && ../.venv/bin/python -m pytest -q
 ```
 覆盖：命令帧构造、IMU 使能字节、reconnect 退避、解包（左右 + 参考样例包物理一致性）、
-标定（零偏/重力/死区恢复）、WebSocket（200 帧按序不降采样、rad/s 转换、多客户端广播）。
+标定（零偏/重力/死区恢复）、WebSocket（200 帧按序不降采样、rad/s 转换、多客户端广播、按手柄回放状态、mark）；
+按键掩码（单位、两两组合、全按、[ND] 字节位置）、摇杆（12-bit 解包、出厂标定解析、中心/行程/对角/死区）、
+契约一致性（Python / JS / Schema 的版本、按键名、连接状态）、服务端到端（左右隔离、按键不等 IMU、
+断连状态在该手柄最后一帧之后、重连保留标定、录包→回放）、左右发现与归属（只连一侧时跳过另一侧、未知侧经 GATT 判定、同侧第二只被忽略、GATT 订正广播侧别），以及**真机回归**
+`test_hw_capture.py`（2026-10-24 左右手柄抓包：逐键标签、摇杆满行程/静置、真实断连顺序）。
 
 ### Web（Node 内置 test runner）
 ```bash
 cd web && npm install && npm test
 ```
 覆盖：四元数恒等式与积分、四方向 slash 区分、THRUST、不应期、手势事件字段、
-每帧一个 MotionState、标定后死区。
+每帧一个 MotionState、标定后死区、`imuReady:false` 帧不参与积分/标定；
+`input-client`（按下/释放边沿、组合、独立释放、长按不重复、左右隔离、离线/stale/WebSocket 断开时释放、
+重连后重新按下、版本不符拒收、设备过滤）、验收流程判定逻辑（`checklist.test.js`）。
 
 ### Web 端到端（headless Chromium，Mock IMU 驱动）
 ```bash
@@ -29,8 +35,11 @@ cd web
   --server "node_modules/.bin/vite --port 5173 --strictPort" --port 5173 \
   -- ../.venv/bin/python test/e2e_smoke.py
 ```
-断言：三个页面无 console error；Playground 连接后控制器显示 LEFT、motionSpeed 峰值 > 0.4、
-五种手势全部触发、3D 剑画布非空白；Fruit Slash 分数与切片数随脚本化 mock 上升。
+断言：页面无 console error；Playground 连接后控制器显示 LEFT、motionSpeed 峰值 > 0.4、
+五种手势全部触发、3D 剑画布非空白；Fruit Slash 分数与切片数随脚本化 mock 上升；
+Input Test 对接真实 adapter（`--source synthetic --side both`）：左右在线、双侧按下/释放事件、
+**按住键时杀掉 adapter → 全部释放（transport）**、重启后恢复；再用**真机抓包回放**（20 倍速）：
+右手柄按住 A 时被 Sync 断开 → A 被释放（offline）→ 重连后恢复在线。
 
 ---
 
@@ -47,6 +56,7 @@ cd web
 | 6 Gesture Engine | `npm test` + e2e：四方向 slash 稳定区分、事件字段完整、用原始 timestamp | 通过（12 用例 + e2e 五手势全中） |
 | 7 Fruit Slash | e2e：脚本化 mock 挥砍 → 切片数 / 分数上升；切炸弹扣分且不结束 | 通过 |
 | 8 Docs | 全部 docs/ 完成；`npm run build` 三页构建通过 | 通过 |
+| 输入专项（2026-10-24） | pytest 89 项（含真机回归 5 项、左右发现逻辑 4 项）、web 单测 34 项、e2e 19 项；真机 4 段（见 HARDWARE_BRINGUP §5 第 5 轮） | 通过 |
 
 ---
 
@@ -61,6 +71,8 @@ cd web
 | 3 | 转动 Joy-Con → 3D sword 同步 | 管线**已验收**（Mock/Keyboard/Gamepad/JoyCon1）；Joy-Con 2 真机驱动 3D 剑待现场跑。 |
 | 4 | 快速挥动 → 识别 SLASH_LEFT/RIGHT/UP/DOWN | **已验收**（四方向单元测试 + e2e 全中）；真机手势轴符号待现场微调。 |
 | 5 | 打开游戏 → 挥 Joy-Con → 水果被切 → Score 增加 | **已验收**（Fallback Provider）；Joy-Con 2 真机驱动待现场跑。 |
+
+| 6 | **全部按键 + 摇杆 + 左右同时（输入专项）** | **已真机验收（2026-10-24）**：左 11 / 右 12 键逐键（右 ABXY/SL/SR 订正，Home/Capture 新增，Sync 不上报）；摇杆出厂标定，静置 0、八方向满行程；组合/长按；左右同时；IMU 未标定时按键可用；断连释放、长按 Sync 自动重连。对外接口：WebSocket 协议 v2 + `shared/protocol/input-client.mjs`。 |
 
 **结论**：Motion Engine、Playground、3D Sword、Gesture Engine、Fruit Slash 五项在 Fallback Provider 下**全部通过验收**。Joy-Con 2 BLE **底层协议链路已在真机验证**（accel 1 g / int16 LE、gyro 定轴、全按键 + C 键、Service UUID）；剩「左 Joy-Con 复核、浏览器端到端、延迟、真机手感」按 [JOYCON2_PROTOCOL.md](./JOYCON2_PROTOCOL.md) §J 清单继续（GOAL.md §13）。
 

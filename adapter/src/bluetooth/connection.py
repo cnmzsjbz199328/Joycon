@@ -40,6 +40,12 @@ StateHandler = Callable[[str, "str | None", "dict[str, Any]"], None]
 # must not walk the cooldown backoff (that would sleep through a Sync press).
 NOT_FOUND_RETRY_S = 1.0
 
+# HW 2026-10-24: once dropped (e.g. a short Sync press while connected), a
+# Joy-Con 2 does not advertise to us again by itself. Holding Sync until the
+# player LEDs run puts it back into pairing advertising; the retry loop below
+# then reconnects within ~1 s.
+RECONNECT_HINT = "{side} Joy-Con 2 dropped -- hold its Sync button until the LEDs run to reconnect"
+
 
 def side_from_services(client: BleakClient) -> str:
     uuids = {ch.uuid.lower() for s in client.services for ch in s.characteristics}
@@ -72,6 +78,7 @@ class JoyConConnection:
         self._policy = policy or ReconnectPolicy()
         self._read_stick_cal = read_stick_calibration
         self._client: BleakClient | None = None
+        self._was_connected = False
         self._stop = asyncio.Event()
         self._connected = asyncio.Event()
         self.flash: dict[str, str] = {}  # diagnostic: hex of the stick-calibration reads
@@ -152,13 +159,14 @@ class JoyConConnection:
         while not self._stop.is_set():
             not_found = False
             try:
-                self._state("connecting")
+                self._state("connecting", self._hint())
                 client = BleakClient(self._device or self.address, disconnected_callback=self._on_disconnect)
                 self._device = None
                 await client.connect()
                 self._client = client
                 await self._initialise(client)
                 self._policy.reset()
+                self._was_connected = True
                 self._connected.set()
                 self._state("connected", gatt_side=self.side, flash=dict(self.flash))
                 log.info("connected %s (%s)", self.address, self.side)
@@ -180,11 +188,10 @@ class JoyConConnection:
 
             if not_found:
                 delay = NOT_FOUND_RETRY_S
-                hint = f"{self.side} Joy-Con 2 not advertising -- press its Sync button to reconnect"
-                self._state("reconnecting", hint)
+                self._state("reconnecting", self._hint())
             else:
                 delay = self._policy.next_delay()
-                hint = self._policy.status_hint()
+                hint = self._policy.status_hint() or self._hint()
                 self._state("cooldown" if self._policy.in_cooldown else "reconnecting", hint)
                 if hint:
                     log.warning(hint)
@@ -196,10 +203,13 @@ class JoyConConnection:
 
         self._state("stopped")
 
+    def _hint(self) -> str | None:
+        return RECONNECT_HINT.format(side=self.side) if self._was_connected else None
+
     def _on_disconnect(self, _client: BleakClient) -> None:
         log.info("disconnected %s", self.address)
         self._connected.clear()
-        self._state("disconnected")
+        self._state("disconnected", self._hint())
 
     async def _safe_disconnect(self) -> None:
         if self._client is not None:

@@ -217,3 +217,15 @@ async def test_record_then_replay_reproduces_the_session(tmp_path):
     assert isinstance(items[0], StateChange) and items[0].state == "connected"
     assert items[1][1] == "right" and items[2][1] == "right"
     assert isinstance(items[3], StateChange) and items[3].state == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_factory_stick_calibration_from_the_connect_info_is_used():
+    async with Harness() as h:
+        h.state("right", "connected", flash={"factory": "4c 88 7c b3 a4 4d c3 54 48"})
+        await h.recv(1)
+        h.frame("right", stick_raw=(2109, 1987))  # this unit's measured rest point
+        h.frame("right", stick_raw=(2124 - 1219, 1992))  # full left, very first push
+        rest, left = await h.recv(2)
+        assert rest["data"]["stick"] == {"x": 0.0, "y": 0.0}
+        assert left["data"]["stick"] == {"x": -1.0, "y": 0.0}

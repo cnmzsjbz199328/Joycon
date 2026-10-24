@@ -144,7 +144,7 @@ Mock IMU（15.7 rad/s）仍轻松越过新阈值，`gestures.test.js` 用硬编�
 
 | 级 | 位置 | 做什么 | 何时 |
 | --- | --- | --- | --- |
-| Adapter 级 | `adapter/src/calibration/` | 静置 2s：陀螺零偏、单位重力参考、加速度偏置、噪声死区 | 启动流程 step 5（GOAL.md §15） |
+| Adapter 级 | `adapter/src/calibration/` | 静置 2s：陀螺零偏、单位重力参考、加速度偏置、噪声死区。每只手柄各一份，**须静止**（窗口内陀螺噪声 > 2 dps 则重来），重连后保留 | 连上后自动进行；协议 v2 起帧从第一包就下发，标定完成前帧带 `imuReady:false`，Engine 跳过这些帧（不积分、不收集 Engine 级标定），按键/摇杆不受影响 |
 | Engine 级 | `motion-engine.js` | 再做一次逐帧收集：残余陀螺零偏 + 死区（应对 provider 未标定的情况，如 `JoyCon1Provider`、`GamepadProvider`） | Playground「Recalibrate」按钮 / 游戏开始前 |
 
 Mock / synthetic 数据无偏，`calibrated=true` 直接给出。

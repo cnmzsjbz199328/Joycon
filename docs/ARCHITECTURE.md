@@ -132,3 +132,6 @@ docs/  tests/
 | ADR-5 | 姿态解算：Complementary 主 + Madgwick 备选 | 低延迟优先；VQF 过重 | 见 MOTION_ENGINE.md |
 | ADR-6 | 静置标定（非出厂标定块） | 社区无 Joy-Con 2 出厂标定解析 | 可被真机发现替换 |
 | ADR-7 | 时间戳用 Adapter `time.monotonic()` | packet ID 非绝对时间 | 已定 |
+| ADR-8 | 摇杆用手柄自身出厂标定（flash `0x130A8`：中心 + 四向行程）+ 行程自学习 + 圆形限幅 + 径向死区 0.08；读不到时退回静置找中心 | `(raw-2048)/2048` 只到 ±0.6 且静置不为 0；社区的 ×1.7 增益不按单只手柄标定。真机两只：中心误差 ≤15 计数、八方向 r≥0.99 | 已定（2026-10-24） |
+| ADR-9 | 协议 v2：一个 adapter 同时连左右，状态按手柄下发，`connected` = 该手柄在线；按键/摇杆不等 IMU 标定（`imuReady` 标记）；状态与帧走同一队列保证“断连之后不再有该手柄的帧” | 外部项目需要区分“WebSocket 通”与“手柄在线”，并且断连时不能卡键 | 已定（2026-10-24） |
+| ADR-10 | 外部接入用纯逻辑参考客户端 `shared/protocol/input-client.mjs`（离线/stale/断开即释放），不在 adapter 端发合成“释放帧” | 帧只承载真实数据；释放规则在客户端一处实现、可单测；Python 侧规则见 `examples/input_client.py` | 已定（2026-10-24） |

@@ -118,10 +118,10 @@ def run(p):
     browser.close()
 
 
-def start_adapter():
+def start_adapter(*source):
+    source = source or ("--source", "synthetic", "--side", "both")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "adapter.src.service", "--source", "synthetic", "--side", "both",
-         "--port", str(ADAPTER_PORT)],
+        [sys.executable, "-m", "adapter.src.service", *source, "--port", str(ADAPTER_PORT)],
         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     for _ in range(100):
@@ -169,6 +169,30 @@ def run_input_page(browser):
             "globalThis.__jc.device('left').online && globalThis.__jc.device('right').online", timeout=15000)
         check(True, "input: both back online after adapter restart")
         ip.screenshot(path=str(OUT / "input.png"), full_page=True)
+    finally:
+        adapter.kill()
+        adapter.wait()
+
+    # Real hardware session (adapter/tests/fixtures/hw_2026-10-24_input.jsonl), 20x speed:
+    # the right Joy-Con drops (Sync) while A is held -- the page must release A.
+    fixture = ROOT / "adapter/tests/fixtures/hw_2026-10-24_input.jsonl"
+    adapter = start_adapter("--source", "replay", "--file", str(fixture), "--speed", "20", "--no-calibrate")
+    try:
+        hp = browser.new_page(viewport={"width": 1280, "height": 1300})
+        wire_console(hp, "input-hw")
+        hp.goto(f"{BASE}/input.html?ws=ws://127.0.0.1:{ADAPTER_PORT}")
+        hp.wait_for_function("globalThis.__jc?.device('right').online", timeout=8000)
+        hp.wait_for_function("globalThis.__jc.device('right').connection === 'disconnected'", timeout=20000)
+        st = hp.evaluate("""() => ({
+          a: globalThis.__jc.isPressed('right', 'a'),
+          lit: [...document.querySelectorAll('#dev-right .it-btn.on')].map(n => n.dataset.b),
+          log: [...document.querySelectorAll('#log li')].map(e => e.textContent).slice(0, 12),
+        })""")
+        check(not st["a"] and st["lit"] == [], f"input (real capture): right A released on the real disconnect (lit={st['lit']})")
+        check(any("right" in t and "\u25b2 a" in t and "(offline)" in t for t in st["log"]),
+              "input (real capture): release logged with reason 'offline'")
+        hp.wait_for_function("globalThis.__jc.device('right').online", timeout=20000)
+        check(True, "input (real capture): right back online after reconnect")
     finally:
         adapter.kill()
 

@@ -19,7 +19,7 @@ import sys
 import time
 
 from .calibration.calibrator import CalibrationResult, Calibrator
-from .calibration.stick import StickNormalizer
+from .calibration.stick import StickNormalizer, parse_factory_stick_cal
 from .decoder.packet import DecodedPacket, PacketTooShort, decode_packet
 from .sources import StateChange, make_source
 
@@ -51,6 +51,9 @@ async def run(args: argparse.Namespace) -> int:
         async for item in source.frames():
             if isinstance(item, StateChange):
                 print(f"[{item.side}] {item.state}" + (f" -- {item.hint}" if item.hint else ""), flush=True)
+                cal = parse_factory_stick_cal((item.info.get("flash") or {}).get("factory"))
+                if item.state == "connected" and cal is not None:
+                    sticks.setdefault(item.side, StickNormalizer()).apply_factory(cal)
                 continue
             raw, side, _t = item
             try:

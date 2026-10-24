@@ -96,15 +96,16 @@ MIN_IMU_PACKET_LEN = 0x3E   # 62 -- floor for the "IMU enabled?" gate; real pack
 
 # Button-state window as used by the reference decoder ([FR-PY] solo_logic.py):
 #   big-endian int over a 3-byte slice, start offset differs per side.
-# HW-VERIFIED both sides (right 2026-09-06, left 2026-09-28): every named button
-# in BUTTON_MASKS_LEFT/RIGHT toggled its listed bit exactly, no changes needed.
+# HW-VERIFIED both sides, every button by label on 2026-10-24 (right A/B/X/Y/SL/SR
+# corrected that day, see decoder/buttons.py).
 BUTTON_STATE_SLICE_LEFT = slice(4, 7)
 BUTTON_STATE_SLICE_RIGHT = slice(3, 6)
 
 # Stick slice as used by the reference decoder ([FR-PY] solo_logic.py) --
 # note this differs from the layout table (0x08 / 0x0B) by ~2 bytes.
-# HW-VERIFIED: right 2026-09-06 (centers ~2047/2047, full deflection ~900..3300);
-# left 2026-09-28 (centers near 0, direction-correct on all 4 pushes, not garbage).
+# HW-VERIFIED both sides (2026-09-06 / 09-28 / 10-24): +x right, +y up; the other
+# side's slot holds the placeholder ff f7 7f (= 2047, 2047). Rest points are NOT
+# 2048: right ~(2109, 1987), left ~(1895, 2161) -- see calibration/stick.py.
 # [ND] hid_reports.md agrees: left stick 0x0A, right stick 0x0D, "uncalibrated".
 STICK_SLICE_LEFT = slice(10, 13)
 STICK_SLICE_RIGHT = slice(13, 16)

@@ -16,20 +16,22 @@ The first full motion demo is **Motion Fruit Slash**. Adding Tennis, Boxing,
 Bowling, … later means writing a new consumer of the same `MotionState` /
 `GestureEvent` contract — nothing below the game changes.
 
-> **Joy-Con 2 BLE — core link verified on hardware (right 2026-09-06, left 2026-09-28), some items pending.**
-> Bring-up on a Mac mini (macOS / CoreBluetooth) with real **left + right Joy-Con 2** units:
-> scan → connect → enable IMU → decode all confirmed on both sides. Accelerometer reads 1.00 g in
-> every orientation (int16 LE), gyro is axis-correct, every button on both sides + the new **C**
-> button mapped, Service UUID filled in. Left-side pass reused the right-side assumptions
-> ([`constants.py`](adapter/src/protocol/constants.py) / [`buttons.py`](adapter/src/decoder/buttons.py))
-> as-is — all ten left buttons and the stick slice matched with zero code changes needed.
-> Still open: gesture tuning on the left unit (`SLASH_RIGHT` is only proven out on the right),
-> latency percentiles, high-rate gyro full-scale. Sample rate measured ~33 Hz on this stack
-> (likely a macOS BLE limit, not the controller). Full log:
-> [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) §5 ·
-> checklist: [docs/JOYCON2_PROTOCOL.md](docs/JOYCON2_PROTOCOL.md) §J.
-> Everything above the adapter was already verified through fallback providers
-> (Mock IMU / Keyboard / Gamepad / Joy-Con 1). See [docs/TESTING.md](docs/TESTING.md) §3.
+> **Status (2026-10-24)** — real **left + right Joy-Con 2** on a Mac mini (macOS / CoreBluetooth),
+> both connected to one adapter at the same time:
+> - **Buttons + sticks — verified, stable interface.** All 11 left and 12 right buttons (incl. Home,
+>   Capture, C; Sync is pairing-only), both sticks calibrated from the controller's own factory data
+>   (exactly 0 at rest, full deflection r ≥ 0.99 in all 8 directions incl. diagonals), combos and long holds,
+>   left/right isolation, nothing stuck on disconnect, auto-reconnect after a long Sync press.
+>   Usable from any project via the WebSocket contract — see **[Using the buttons and sticks](#using-the-buttons-and-sticks-from-another-project)**.
+> - **Motion — link verified, tuning paused.** Accel/gyro decode verified on both units; gesture
+>   thresholds tuned on hardware for left/right slashes; UP/DOWN tuning and the `game.html` hardware
+>   run are not done. Latency percentiles and high-rate gyro full-scale are unmeasured.
+> - ~33 Hz per controller on macOS (BLE connection-interval limit, not the controller).
+>
+> Log of every hardware round: [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) §5 ·
+> per-item checklist: [docs/JOYCON2_PROTOCOL.md](docs/JOYCON2_PROTOCOL.md) §J.
+> Everything above the adapter also runs on fallback providers (Mock IMU / Keyboard / Gamepad /
+> Joy-Con 1), see [docs/TESTING.md](docs/TESTING.md).
 
 ---
 
@@ -41,14 +43,18 @@ Bowling, … later means writing a new consumer of the same `MotionState` /
 python -m venv .venv
 .venv/bin/pip install -r adapter/requirements.txt
 
-# real hardware (EXPERIMENTAL):
-.venv/bin/python -m adapter.src.service --source joycon2
+# real hardware: finds a left AND a right Joy-Con 2 — hold Sync on each until the LEDs run
+.venv/bin/python -m adapter.src.service --source joycon2            # --side left|right for one
+.venv/bin/python -m adapter.src.service --source joycon2 --record adapter/captures/session.jsonl
 
-# no hardware — synthetic motion, everything downstream works the same:
-.venv/bin/python -m adapter.src.service --source synthetic
+# no hardware — synthetic controllers (motion + a button walk + circling sticks):
+.venv/bin/python -m adapter.src.service --source synthetic --side both
+# replay a recording through the full pipeline:
+.venv/bin/python -m adapter.src.service --source replay --file adapter/tests/fixtures/hw_2026-10-24_input.jsonl
 ```
 
-The adapter serves `ws://127.0.0.1:8765`.
+The adapter serves `ws://127.0.0.1:8765`. Buttons and sticks are live as soon as a controller
+connects; the IMU still-calibration (set the controller down ~2 s) only matters for motion.
 
 ### 2. Web
 
@@ -58,7 +64,8 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Open the launcher, then:
+Open the launcher. **Input Test** (`input.html`) shows every button and both sticks of both
+controllers with a press/release log. For motion:
 
 1. Pick a provider (`Joy-Con 2 (adapter)` for hardware; `Mock IMU` needs nothing).
 2. Press **Connect** → status shows **Connected**, controller shows **LEFT/RIGHT**.
@@ -73,6 +80,25 @@ Run Adapter → open page → `Connect Joy-Con 2` → `Connected` → "hold flat
 
 ---
 
+## Using the buttons and sticks from another project
+
+Connect to `ws://127.0.0.1:8765` and read per-controller state frames — no BLE, no IMU:
+
+```js
+import { connectJoyCon2 } from "./shared/protocol/input-client.mjs";   // browser or Node >= 22
+const jc = connectJoyCon2();                                           // or { controllers: ["right"] }
+jc.on("press",   ({ controller, button }) => console.log(controller, button, "down"));
+jc.on("release", ({ controller, button, reason }) => console.log(controller, button, "up", reason));
+jc.device("left").stick;   // { x, y } in [-1, 1], +x right, +y up, 0,0 at rest
+```
+
+Button names — left: `up down left right l zl sl sr minus capture stick`; right:
+`a b x y r zr sl sr plus home c stick`. A controller that drops, a stale stream or a closed socket
+releases everything it held. Contract (protocol v2): [shared/protocol/README.md](shared/protocol/README.md);
+runnable Node and Python examples: [examples/](examples/README.md).
+
+---
+
 ## Layout
 
 ```
@@ -81,17 +107,20 @@ adapter/        Python BLE adapter
     bluetooth/    scan, connect, reconnect backoff, raw prototype
     protocol/     UUIDs, command frames, IMU-enable bytes, packet offsets, scales
     decoder/      raw notification -> structured (buttons/stick/accel/gyro)
-    calibration/  2 s still calibration -> gyro bias, gravity ref, dead zone
+    calibration/  IMU still calibration; stick normalisation from factory calibration
     websocket/    normalized JSON broadcast (no downsampling)
     sources.py    frame sources: joycon2 / replay / synthetic
     reader.py     terminal IMU reader          (Phase 2)
     service.py    full pipeline + WebSocket     (Phase 3)
   tests/          pytest
 
-shared/protocol/  data contracts, ONE source of truth
-  schema.json     JSON Schema for InputFrame / MotionState / GestureEvent
+shared/protocol/  data contracts, ONE source of truth (protocol v2)
+  schema.json     JSON Schema for InputFrame / Status / MotionState / GestureEvent
   frame.py        Python side
   contracts.mjs   browser side
+  input-client.mjs  reference client: buttons/sticks, press/release, no stuck keys
+
+examples/         minimal Node + Python consumers of the input interface
 
 web/
   src/
@@ -99,6 +128,7 @@ web/
     motion/       Motion Engine: filters, quaternion, orientation, gestures
     playground/   IMU scope + 3D Sword
     game/         Motion Fruit Slash
+    input-test/   input.html: all buttons + sticks, event log, guided acceptance run
     ui/           connection panel, calibration overlay, styles
   test/           node:test unit tests + Playwright e2e smoke
 
@@ -123,7 +153,8 @@ cd adapter && ../.venv/bin/python -m pytest -q
 # web unit
 cd web && npm test
 
-# web end-to-end (headless Chromium, Mock IMU)
+# web end-to-end (headless Chromium: Mock IMU pages + input page against a synthetic
+# adapter and against the real hardware recording)
 cd web && ../.venv/bin/pip install playwright && ../.venv/bin/python -m playwright install chromium
 ~/.claude/skills/webapp-testing/scripts/with_server.py \
   --server "node_modules/.bin/vite --port 5173 --strictPort" --port 5173 \
@@ -141,7 +172,10 @@ Done (Phase 1 of the project): research → protocol → BLE reader → IMU deco
 WebSocket bridge → Motion Playground → 3D Sword → Gesture Engine → Fruit Slash →
 docs.
 
-Next: verify the Joy-Con 2 BLE path on hardware — step-by-step runbook in
-[docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) — then stack more games on
-the unchanged Motion API — Tennis, Table Tennis, Boxing, Racing, Bowling,
-Fishing, Rhythm.
+Done since: Joy-Con 2 BLE verified on hardware (both units), full button + stick
+input interface (protocol v2).
+
+Next: motion UP/DOWN tuning and the `game.html` hardware run (paused), latency
+percentiles — runbook in [docs/HARDWARE_BRINGUP.md](docs/HARDWARE_BRINGUP.md) — then
+stack more games on the unchanged Motion API — Tennis, Table Tennis, Boxing,
+Racing, Bowling, Fishing, Rhythm.
