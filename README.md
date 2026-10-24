@@ -2,6 +2,13 @@
 
 Use a Nintendo Switch 2 **Joy-Con 2** as a motion controller on PC — entirely off-console.
 
+**Integrating buttons and sticks into another project? Start with the
+[Integration guide](docs/INTEGRATION.md).** It covers adapter setup, client files,
+working examples, protocol v2, disconnect handling and the verified platform scope.
+The input service works independently of the motion demos.
+
+中文接入说明：其他项目请先阅读 [Integration guide](docs/INTEGRATION.md)，通过现有 WebSocket 服务接入。
+
 This is **not** a single game. It is a reusable base: the Joy-Con 2 link is
 researched once, and gameplay stacks on top.
 
@@ -81,6 +88,11 @@ Run Adapter → open page → `Connect Joy-Con 2` → `Connected` → "hold flat
 ---
 
 ## Using the buttons and sticks from another project
+
+Follow the **[Integration guide](docs/INTEGRATION.md)** for setup and cross-project
+file paths. Vendor `input-client.mjs` together with its sibling `contracts.mjs`,
+or use them from a local checkout; no published client package is required.
+The following import assumes this repository's directory layout.
 
 Connect to `ws://127.0.0.1:8765` and read per-controller state frames — no BLE, no IMU:
 
